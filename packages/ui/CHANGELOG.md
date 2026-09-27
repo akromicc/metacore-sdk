@@ -1,5 +1,11 @@
 # @asteby/metacore-ui
 
+## 2.18.3
+
+### Patch Changes
+
+- 9b03ded: La navegación del addon ya no importa el namespace `icons` de lucide. Cada glifo del sidebar baja solo, y el shell deja de cargar los miles de SVG en el primer pintado.
+
 ## 2.18.2
 
 ### Patch Changes

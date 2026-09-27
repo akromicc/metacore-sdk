@@ -1,5 +1,17 @@
 # @asteby/metacore-app-providers
 
+## 112.0.0
+
+### Major Changes
+
+- 9b03ded: `MetacoreAppShell` sale de la raíz del paquete y se importa desde `@asteby/metacore-app-providers/shell`. La raíz compartida por federation ya no arrastra runtime-react, la UI ni el mapa de iconos al primer pintado. `Mascot` sigue en la raíz y también en `./mascot`.
+
+### Patch Changes
+
+- Updated dependencies [9b03ded]
+  - @asteby/metacore-ui@2.18.3
+  - @asteby/metacore-runtime-react@39.2.8
+
 ## 111.0.0
 
 ### Patch Changes
