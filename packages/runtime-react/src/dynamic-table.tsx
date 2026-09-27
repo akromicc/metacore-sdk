@@ -78,6 +78,7 @@ import {
 import { OptionsContext } from './options-context'
 import type { TableMetadata, ApiResponse, ColumnDefinition } from './types'
 import { getSearchableColumnKeys } from './column-visibility'
+import { visibleRelationInclude } from './list-include'
 import { useDebouncedValue } from './use-debounced-value'
 import { useCan, usePermissionsActive, gateTableMetadata } from './permissions-context'
 import { useDynamicRowActions } from './dynamic-row-actions'
@@ -808,6 +809,11 @@ export function DynamicTable({
         return Array.from(set)
     }, [hiddenColumns, scopeHiddenColumns])
 
+    const relationInclude = useMemo(
+        () => visibleRelationInclude(metadata?.columns, effectiveHiddenColumns),
+        [metadata, effectiveHiddenColumns],
+    )
+
     const buildFilterParams = useCallback(() => {
         const params: Record<string, any> = {}
         if (sorting.length > 0) {
@@ -868,6 +874,7 @@ export function DynamicTable({
                 per_page: pagination.pageSize,
                 ...buildFilterParams(),
             }
+            if (relationInclude) params.include = relationInclude
             const res = await api.get(endpoint || `/data/${model}`, { params }) as { data: ApiResponse<any[]> }
             setForbidden(false)
             if (res.data.success) {
@@ -895,7 +902,7 @@ export function DynamicTable({
         } finally {
             setLoadingData(false)
         }
-    }, [model, metadata, pagination, buildFilterParams, refreshTrigger, endpoint, currentBranch?.id, api, enableUrlSync])
+    }, [model, metadata, pagination, buildFilterParams, refreshTrigger, endpoint, currentBranch?.id, api, enableUrlSync, relationInclude])
 
     // Columns whose metadata opts into a footer total (display_config.aggregate
     // → styleConfig.aggregate). When empty, no footer row is rendered and no
@@ -936,6 +943,7 @@ export function DynamicTable({
                     per_page: infPageSize,
                     ...buildFilterParams(),
                 }
+                if (relationInclude) params.include = relationInclude
                 const res = (await api.get(endpoint || `/data/${model}`, {
                     params,
                 })) as { data: ApiResponse<any[]> }
@@ -974,7 +982,7 @@ export function DynamicTable({
                 else setLoadingData(false)
             }
         },
-        [metadata, buildFilterParams, endpoint, model, api, currentBranch?.id, enableUrlSync],
+        [metadata, buildFilterParams, endpoint, model, api, currentBranch?.id, enableUrlSync, relationInclude],
     )
 
     // Signature of everything that must reset the incremental list to page 1:

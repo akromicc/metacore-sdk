@@ -393,10 +393,18 @@ export {
     getSearchableColumnKeys,
 } from './column-visibility'
 export {
+    batchGet,
     loadQueryPart,
     nameBatchTokens,
+    narrowInToken,
     optionsBatchToken,
     optionsModelFromUrl,
+    rememberInRows,
+    resetQueryBatchCache,
+    splitInToken,
+    tokenForGet,
+    type InListToken,
+    type NarrowedIn,
     type QueryPart,
 } from './query-batch'
 export {
