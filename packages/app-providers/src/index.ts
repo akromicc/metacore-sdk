@@ -1,3 +1,6 @@
+// MetacoreAppShell is `@asteby/metacore-app-providers/shell`, not here.
+// Re-exporting it from this entry pulls runtime-react into the federation
+// share that the host loads before the first paint.
 export { DirectionProvider, useDirection, type Direction } from './direction-provider'
 export { FontProvider, useFont, type FontProviderProps } from './font-provider'
 export {
@@ -26,10 +29,6 @@ export {
   type OrgConfigFetcher,
   type OrgConfigProviderProps,
 } from './org-config-provider'
-export {
-  MetacoreAppShell,
-  type MetacoreAppShellProps,
-} from './metacore-app-shell'
 export {
   Mascot,
   MASCOT_SKINS,

@@ -148,7 +148,7 @@ embedded Hub iframes, and stale-while-revalidate metadata-cache
 invalidation when a service-worker update is applied.
 
 ```tsx
-import { MetacoreAppShell } from '@asteby/metacore-app-providers'
+import { MetacoreAppShell } from '@asteby/metacore-app-providers/shell'
 import { QueryClient } from '@tanstack/react-query'
 import { api } from './lib/api'
 

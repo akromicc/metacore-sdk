@@ -19,6 +19,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./shell": {
+      "types": "./dist/metacore-app-shell.d.ts",
+      "import": "./dist/metacore-app-shell.js"
+    },
+    "./mascot": {
+      "types": "./dist/mascot.d.ts",
+      "import": "./dist/mascot.js"
     }
   },
   "scripts": {

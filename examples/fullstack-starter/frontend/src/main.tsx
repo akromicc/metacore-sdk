@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider } from '@tanstack/react-router'
-import { MetacoreAppShell } from '@asteby/metacore-app-providers'
+import { MetacoreAppShell } from '@asteby/metacore-app-providers/shell'
 
 import { router, queryClient } from './router'
 import { api } from './lib/api'

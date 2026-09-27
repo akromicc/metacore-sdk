@@ -1,4 +1,6 @@
-import { Box, Circle, icons as lucideIcons, type LucideIcon } from 'lucide-react'
+import { createElement, lazy, Suspense, type ComponentType } from 'react'
+import dynamicIconImports from 'lucide-react/dynamicIconImports'
+import { Box, Circle, type LucideIcon } from 'lucide-react'
 import type { NavCollapsibleItem, NavLinkItem } from './types'
 
 /**
@@ -20,12 +22,24 @@ export const FALLBACK_GROUP_ICON: LucideIcon = Box
 /** Neutral fallback icon for a child nav item that declares none. */
 export const FALLBACK_ITEM_ICON: LucideIcon = Circle
 
-const ICONS = lucideIcons as Record<string, LucideIcon>
+type IconName = keyof typeof dynamicIconImports
+
+const glyphCache = new Map<string, LucideIcon>()
+
+function toKebab(name: string): string {
+  return name
+    .replace(/[\s_]+/g, '-')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')
+    .toLowerCase()
+}
 
 /**
  * Resolve any icon name against the full Lucide icon set. Names match
  * case-insensitively after normalising separators, so manifests may use
  * `shopping-cart`, `shopping_cart`, or `ShoppingCart` interchangeably.
+ * Each glyph is its own import. A namespace import of lucide put every SVG
+ * in the shell's first load.
  * Returns `fallback` for missing/unknown names so something always renders.
  */
 export function resolveIconName(
@@ -33,16 +47,25 @@ export function resolveIconName(
   fallback: LucideIcon = FALLBACK_ITEM_ICON,
 ): LucideIcon {
   if (!name) return fallback
-  const direct = ICONS[name]
-  if (direct) return direct
-  const pascal = name
-    .replace(/[\s_-]+/g, ' ')
-    .trim()
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join('')
-  return ICONS[pascal] ?? fallback
+  const key = toKebab(name)
+  const cached = glyphCache.get(key)
+  if (cached) return cached
+  const loader = dynamicIconImports[key as IconName]
+  if (!loader) {
+    glyphCache.set(key, fallback)
+    return fallback
+  }
+  const Glyph = lazy(loader as () => Promise<{ default: ComponentType<{ className?: string }> }>)
+  function NavIcon(props: { className?: string }) {
+    return createElement(
+      Suspense,
+      { fallback: createElement(fallback, props) },
+      createElement(Glyph, props),
+    )
+  }
+  const icon = NavIcon as unknown as LucideIcon
+  glyphCache.set(key, icon)
+  return icon
 }
 
 /** Matches a namespaced i18n key like `customers.nav.invoices` (≥1 dot). */

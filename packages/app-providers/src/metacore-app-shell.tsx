@@ -5,7 +5,7 @@
 //
 // Apps mount it once and forget about the wedding-cake of providers:
 //
-//   import { MetacoreAppShell } from '@asteby/metacore-app-providers'
+//   import { MetacoreAppShell } from '@asteby/metacore-app-providers/shell'
 //   import { api } from './lib/api'
 //
 //   ReactDOM.createRoot(...).render(
