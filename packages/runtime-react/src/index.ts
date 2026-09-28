@@ -130,6 +130,20 @@ export {
 } from './use-dynamic-filters'
 export { useDebouncedValue, SEARCH_DEBOUNCE_MS } from './use-debounced-value'
 export {
+    useOptimisticMutation,
+    type UseOptimisticMutationOptions,
+    type UseOptimisticMutationResult,
+} from './use-optimistic-mutation'
+export { useFlipAnimation, type UseFlipAnimationOptions } from './use-flip-animation'
+export {
+    motionDuration,
+    motionEasing,
+    prefersReducedMotion,
+    MOTION_DEFAULTS,
+    type MotionDuration,
+    type MotionEasing,
+} from './motion'
+export {
     useResource,
     useMutation,
     type ResourceState,
