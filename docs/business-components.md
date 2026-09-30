@@ -19,6 +19,7 @@ Reglas comunes del contrato:
 | `LineItemsEditor` | `LineItem[]` | `onChange`, `onValidate`, `onRequestProduct` | prop `editPermission` |
 | `PaymentCapture` | `PaymentTender[]` | `onChange`, `onSubmit(payload)` | prop `submitPermission` |
 | `RefundDestination` | `RefundAllocation[]` | `onChange`, `onValidate` | — |
+| `InspectionChecklist` | `InspectionPoint[]` (+ `InspectionHeader`) | `onChange`, `onHeaderChange`, `onUpload`, `onValidate`, `onAddToBudget` | — |
 
 `BUSINESS_COMPONENTS` exporta esta tabla como datos.
 
@@ -72,3 +73,22 @@ Asistente único «Devolver mercancía» (POS, Pedido, Factura, RMA, OT): renglo
 
 - Tailwind v4: el `@source` del host ya debe cubrir `node_modules/@asteby/metacore-runtime-react/dist` (igual que el resto del paquete); los componentes usan solo utilidades estándar más algunos valores arbitrarios de grid.
 - Vite: `@asteby/metacore-runtime-react` va en `optimizeDeps` cuando se enlaza localmente, como el resto de paquetes metacore.
+
+### InspectionChecklist
+
+Checklist con semáforo para la recepción del vehículo, la inspección multipunto de la OT, la alineación y la garantía (TAL-4/TAL-5).
+
+```tsx
+const [points, setPoints] = useState(() => parseInspectionPoints(rows))
+const [header, setHeader] = useState<InspectionHeader>({ damage_notes: '', odometer_km: null, fuel_level: '' })
+<InspectionChecklist
+  points={points} onChange={setPoints}
+  header={header} onHeaderChange={setHeader}          // solo en la recepción: km, combustible, daños
+  onUpload={async (file) => ({ url: await uploadToHost(file) })}  // el mismo POST /upload de los campos `upload`
+  rules={{ requireAllReviewed: true }}
+  onAddToBudget={(pts) => setLines([...lines, ...recommendationsToLines(pts)])}
+/>
+await api.post(action, { points: serializeInspectionPoints(points) })   // única puerta hacia el backend
+```
+
+Cada punto (`makeInspectionPoint`) trae `section`, `name`, `kind` (`check` | `tread` | `measure`), `status` (`pending | ok | attention | urgent`), `value`/`unit`, `notes`, `recommendation` + `quantity` × `unit_price` y `media[]` (fotos y video). La profundidad de dibujo (`tread`) fija el semáforo por `treadThresholds` (default rojo < 1.6 mm, amarillo < 3 mm); verde limpia la recomendación. `summarizeInspection` da conteos, el peor estado y el total recomendado; `recommendationsToLines(points, {approval})` vuelve las recomendaciones renglones del presupuesto (`LineItem`), filtrables por la respuesta del cliente. `readOnly` la muestra sin edición (inspección enviada o cerrada).

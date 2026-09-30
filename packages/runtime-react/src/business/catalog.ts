@@ -65,4 +65,21 @@ export const BUSINESS_COMPONENTS: readonly BusinessComponentSpec[] = [
         usedBy: ['POS', 'Pedido', 'Factura', 'RMA', 'OT'],
         helpers: ['computeReturnTotals', 'validateReturnChoices', 'creditNoteRelation', 'returnSteps', 'serializeReturn'],
     },
+    {
+        name: 'InspectionChecklist',
+        value: 'points: InspectionPoint[] (+ header: InspectionHeader)',
+        events: ['onChange', 'onHeaderChange', 'onUpload', 'onValidate', 'onAddToBudget'],
+        permissions: [],
+        usedBy: ['Recepción de vehículo', 'OT', 'Alineación', 'Garantía'],
+        helpers: [
+            'makeInspectionPoint',
+            'treadStatus',
+            'worstStatus',
+            'summarizeInspection',
+            'validateInspection',
+            'serializeInspectionPoints',
+            'parseInspectionPoints',
+            'recommendationsToLines',
+        ],
+    },
 ] as const
