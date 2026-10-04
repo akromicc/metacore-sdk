@@ -196,6 +196,34 @@ export {
     type ListActionRef,
     type CreateMode,
 } from './list-primary-action'
+export {
+    emitRecordMutation,
+    subscribeRecordMutations,
+    RECORD_MUTATION_EVENT,
+    type RecordMutationKind,
+    type RecordMutationDetail,
+} from './record-mutation-events'
+export {
+    DocumentFormDialog,
+    resolveDocumentForms,
+    type DocumentFormDialogProps,
+} from './document-form-dialog'
+export {
+    modelFromNavUrl,
+    capabilityForNavItem,
+    isNavItemAllowed,
+    useNavItemVisible,
+    type NavLeafLike,
+} from './nav-permissions'
+export {
+    CfdiStampPanel,
+    CfdiStampResultDialog,
+    extractStampResult,
+    type CfdiStampResult,
+    type CfdiStampPanelProps,
+    type CfdiStampResultDialogProps,
+} from './cfdi-stamp-panel'
+export { useRecordMutationTick } from './use-record-mutation-tick'
 export * from './addon-loader'
 export {
     PURGE_ADDON_MESSAGE,
