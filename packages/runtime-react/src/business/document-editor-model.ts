@@ -54,7 +54,9 @@ function declaredDefault(f: ActionFieldDef): unknown {
 
 /**
  * Divulgación progresiva: ¿el campo va plegado en «Opciones fiscales»?
- *  - campos de extensión (`fiscal_data.*`) que aportan otros addons;
+ *  - campos de extensión (`fiscal_data.*`) que aportan otros addons (los que
+ *    el propio tipo declara obligatorios, p. ej. método y forma de pago de la
+ *    factura, se marcan esenciales en splitEditorFields);
  *  - `section: "fiscal" | "advanced"`;
  *  - catálogos opcionales que ya traen un default (método, serie, relación…):
  *    el usuario no necesita tocarlos para guardar.
@@ -84,7 +86,10 @@ export function splitEditorFields(
     fields: readonly ActionFieldDef[],
     opts: { partyField?: string; essentialKeys?: readonly string[]; extensionFields?: readonly ActionFieldDef[] } = {},
 ): EditorFieldGroups {
-    const essentialKeys = new Set(opts.essentialKeys ?? [])
+    // Lo obligatorio que el tipo declara siempre está a la vista, aunque sea de
+    // extensión (`fiscal_data.metodo_pago`): es lo que el usuario debe decidir.
+    // Las extensiones que llegan del metadata (no declaradas) siguen plegadas.
+    const essentialKeys = new Set([...(opts.essentialKeys ?? []), ...fields.filter((f) => f.required).map((f) => f.key)])
     const out: EditorFieldGroups = { essential: [], advanced: [], notes: [] }
     const seen = new Set<string>()
     for (const f of [...fields, ...(opts.extensionFields ?? [])]) {
@@ -200,7 +205,7 @@ export function creditStatus(
 export function linesFromSource(
     rows: unknown,
     map: Record<string, string> = {},
-    opts: { kind?: DocumentFormLines['kind']; discountMode?: DocumentFormLines['discount_mode'] } = {},
+    opts: { kind?: DocumentFormLines['kind']; discountMode?: DocumentFormLines['discount_mode']; defaultTaxRate?: number } = {},
 ): LineItem[] {
     if (!Array.isArray(rows)) return []
     return rows.filter((raw) => !isFullyConsumed(raw)).map((raw) => {
@@ -212,13 +217,18 @@ export function linesFromSource(
         if (!hasValue(rate)) {
             const sub = toAmount(get('subtotal'))
             const tax = toAmount(get('tax_amount'))
-            rate = sub > 0 ? Math.round((tax / sub) * 10000) / 10000 : 0
+            // Un origen sin dato de impuesto (p. ej. una OT de taller: solo
+            // cantidad y precio) toma la tasa de la org, como un renglón nuevo.
+            rate = hasValue(get('tax_amount'))
+                ? sub > 0 ? Math.round((tax / sub) * 10000) / 10000 : 0
+                : opts.defaultTaxRate ?? 0
         }
         const r2 = toAmount(rate)
+        const product = get('product_id')
         const line = makeLine({
-            product_id: get('product_id') ?? undefined,
+            product_id: refValue(product),
             sku: get('sku') ?? undefined,
-            description: String(get('description') ?? get('product_name') ?? ''),
+            description: String(get('description') ?? get('product_name') ?? refLabel(product) ?? refLabel(r.product) ?? ''),
             quantity: qty,
             unit_price: toAmount(get('unit_price')),
             discount: toAmount(get('discount') ?? 0),
@@ -236,9 +246,38 @@ export function linesFromSource(
     })
 }
 
+/** Id de una celda de relación (`{value,label}`, `{id,name}` o el id plano). */
+function refValue(v: unknown): string | undefined {
+    if (v == null || v === '') return undefined
+    if (typeof v === 'object') {
+        const o = v as Record<string, unknown>
+        const id = o.value ?? o.id
+        return id == null || id === '' ? undefined : String(id)
+    }
+    return String(v)
+}
+
+/**
+ * Nombre de una celda de relación ya resuelta por el host (`{label}`/`{name}`).
+ * Un renglón de origen sin descripción propia (InvoiceItem solo lleva el
+ * producto) se nombra con su producto en vez de entrar en blanco.
+ */
+function refLabel(v: unknown): string | undefined {
+    if (!v || typeof v !== 'object') return undefined
+    const o = v as Record<string, unknown>
+    const l = o.label ?? o.name
+    return typeof l === 'string' && l.trim() ? l : undefined
+}
+
 function isFullyConsumed(raw: unknown): boolean {
     const r = (raw ?? {}) as Record<string, any>
     return hasValue(r.remaining_quantity) && toAmount(r.remaining_quantity) <= 0
+}
+
+/** El editor ocupa toda la pantalla: documentos comerciales con renglones (factura, cotización, pedido, OC). */
+export function isFullscreenEditor(type: DocumentFormType, forms: Pick<DocumentFormsManifest, 'lines_field'>): boolean {
+    const kind = editorLinesConfig(type, forms)?.kind ?? 'sale'
+    return !!type.lines && (kind === 'sale' || kind === 'purchase')
 }
 
 /** Cuántos renglones del origen se cargaron y cuántos se omitieron por estar ya cubiertos. */
@@ -267,7 +306,11 @@ export function localIssues(lines: LineItem[], opts: { requireLines?: boolean; r
         issues.push({ field: 'lines', severity: 'error', message: 'Agrega al menos un renglón.' })
     }
     items.forEach((l, i) => {
-        if (!l.description.trim()) issues.push({ field: `lines.${i}`, severity: 'error', message: `Renglón ${i + 1}: falta la descripción.` })
+        // Un renglón con producto se describe con él (el servidor lo nombra
+        // desde el catálogo): solo un renglón libre exige texto, como en el
+        // editor de renglones (validateLineItems).
+        if (!l.description.trim() && !l.product_id)
+            issues.push({ field: `lines.${i}`, severity: 'error', message: `Renglón ${i + 1}: elige un producto o escribe la descripción.` })
         if (toAmount(l.unit_price) <= 0) issues.push({ field: `lines.${i}`, severity: 'warning', message: `Renglón ${i + 1}: precio en cero.` })
         if (l.max_quantity != null && toAmount(l.quantity) > toAmount(l.max_quantity)) {
             issues.push({
