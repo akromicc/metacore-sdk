@@ -359,6 +359,10 @@ export {
 } from './sidebar-layout-manager'
 export * from './org-runtime-context'
 export * from './business'
+// Primitivos de negocio (PaymentAllocator, AgingTable, ApprovalInbox,
+// contribuciones/modales federados, tipos de documento y contratos de paneles).
+// Ver primitives/index.ts para el mapa completo.
+export * from './primitives'
 export * from './org-runtime-provider'
 export * from './navigation-builder'
 export * from './i18n-provider'
@@ -674,3 +678,18 @@ export * from './document'
 // (`option_filter` / `optionFilter` on the field).
 export { getOptionFilter, applyOptionFilter, optionPassesRule } from './option-filter'
 export type { OptionFilter, OptionFilterRule } from './option-filter'
+
+// Addons instalados / capacidades provistas — primitivo único de «¿qué hay
+// instalado?» para hosts y remotes federados. Sin provider los hooks devuelven
+// `undefined` (desconocido): el consumidor NUNCA debe asumir ausente.
+export {
+    InstalledAddonsProvider,
+    useAddonInstalled,
+    useCapabilityProvided,
+    useInstalledAddons,
+    type InstalledAddonsValue,
+} from './installed-addons-context'
+
+// Ayudantes de captura (registerRecordPrefill de @asteby/metacore-sdk) arriba
+// del formulario genérico de un modelo; DynamicRecordDialog ya lo monta.
+export { RecordPrefillBar, type RecordPrefillBarProps } from './record-prefill-bar'
