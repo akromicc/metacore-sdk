@@ -210,6 +210,9 @@ export {
     DocumentFormDialog,
     resolveDocumentForms,
     scopeDocumentFormsToFilter,
+    delegatedCreate,
+    withoutDelegatedTypes,
+    type DelegatedCreate,
     type DocumentFormDialogProps,
 } from './document-form-dialog'
 export {
