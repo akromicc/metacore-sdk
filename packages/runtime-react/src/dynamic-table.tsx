@@ -69,7 +69,7 @@ import { useMetadataCache } from './metadata-cache'
 import { useRecordMutationTick } from './use-record-mutation-tick'
 import { useApi, useCurrentBranch } from './api-context'
 import { useReasonPrompt } from './reason-prompt'
-import type { ColumnFilterConfig, GetDynamicColumns } from './dynamic-columns-shim'
+import type { ColumnFilterConfig, GetDynamicColumns, RowActionPredicate } from './dynamic-columns-shim'
 import { defaultGetDynamicColumns, DATE_CELL_TYPES, aggregateOf, formatAggregateTotal } from './dynamic-columns'
 import { useFacetLoaders, isLongTextColumn } from './use-facet-loaders'
 import { translateOptionLabels } from './filter-chips'
@@ -81,11 +81,11 @@ import {
 } from './table-virtualization'
 import { OptionsContext } from './options-context'
 import { RowActionsModelContext } from './row-actions-menu'
-import type { TableMetadata, ApiResponse, ColumnDefinition } from './types'
+import type { TableMetadata, ApiResponse, ColumnDefinition, ActionDefinition } from './types'
 import { getSearchableColumnKeys } from './column-visibility'
 import { visibleRelationInclude } from './list-include'
 import { useDebouncedValue } from './use-debounced-value'
-import { useCan, usePermissionsActive, gateTableMetadata } from './permissions-context'
+import { useCan, usePermissionsActive, useRoleGate, gateTableMetadata, modelCapability } from './permissions-context'
 import { useDynamicRowActions } from './dynamic-row-actions'
 import { ExportDialog } from './dialogs/export'
 import { ImportDialog } from './dialogs/import'
@@ -185,6 +185,13 @@ export interface DynamicTableProps {
     mutationEndpoint?: string
     enableUrlSync?: boolean
     /**
+     * Initial sort applied when there is no user/URL sorting yet. It seeds the
+     * `sorting` state, so a `?sortBy=` deep-link wins over it (when
+     * `enableUrlSync`), and the user can still change or clear the sort via
+     * the column headers. Only read on mount.
+     */
+    defaultSort?: { id: string; desc?: boolean }
+    /**
      * Hide the import action on THIS view even when the model supports it.
      * A role-scoped view (e.g. a rep seeing only their own records) usually
      * wants the table without a bulk-import entry point, while the same model
@@ -213,6 +220,15 @@ export interface DynamicTableProps {
      * clickable and the behaviour is unchanged.
      */
     onRowClick?: (row: any) => void
+    /**
+     * Consumer-side per-row gate for row actions, AND-ed with the metadata
+     * gates (`requiresState` + `condition`): it can only hide more. Receives the
+     * full action definition (adapt an `(actionKey, row)` predicate with
+     * `(a, row) => legacy(a.key, row)`). A throw hides the action (fail-closed,
+     * `console.error`). Memoize it (module-level fn or `useCallback`).
+     * Omitted → behaviour unchanged. Not a substitute for backend authorization.
+     */
+    isRowActionVisible?: RowActionPredicate
     refreshTrigger?: any
     defaultFilters?: Record<string, any>
     extraColumns?: ColumnDef<any>[]
@@ -294,6 +310,10 @@ export interface DynamicTableBulkContext {
     selectedIds: Array<string | number>
     clearSelection: () => void
     refresh: () => void
+    /** Metadata actions visible to the current user (capability-gated when a PermissionsProvider is mounted). */
+    actions: ActionDefinition[]
+    /** `true` when the user may run `actionKey` on this model; always `true` without a PermissionsProvider. */
+    can: (actionKey: string) => boolean
 }
 
 /** True when an api-client error is an HTTP 403 (axios-style or fetch-style). */
@@ -307,12 +327,14 @@ export function DynamicTable({
     endpoint,
     mutationEndpoint,
     enableUrlSync = true,
+    defaultSort,
     hideImport,
     hideExport,
     hiddenColumns = [],
     allowedActionKeys,
     onAction,
     onRowClick,
+    isRowActionVisible: rowActionPredicate,
     refreshTrigger,
     defaultFilters,
     extraColumns = [],
@@ -395,7 +417,12 @@ export function DynamicTable({
     const [bulkDeleteTotal, setBulkDeleteTotal] = useState(0)
 
     const [rowSelection, setRowSelection] = useState({})
-    const [sorting, setSorting] = useState<SortingState>([])
+    const [sorting, setSorting] = useState<SortingState>(() => {
+        if (!defaultSort) return []
+        // A deep-linked ?sortBy= wins; skip the default so no request goes out with it first.
+        if (enableUrlSync && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('sortBy')) return []
+        return [{ id: defaultSort.id, desc: defaultSort.desc ?? false }]
+    })
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
         const initial: VisibilityState = {}
         hiddenColumns.forEach(col => { initial[col] = false })
@@ -799,10 +826,11 @@ export function DynamicTable({
     // filtered by `can(lowercase(model).<action>)`.
     const can = useCan()
     const permissionsActive = usePermissionsActive()
+    const roleGate = useRoleGate()
     const viewMetadata = useMemo(() => {
         if (!metadata || !permissionsActive) return metadata
-        return gateTableMetadata(metadata, model, can, (key, fallback) => t(key, { defaultValue: fallback }))
-    }, [metadata, permissionsActive, can, model, t])
+        return gateTableMetadata(metadata, model, can, (key, fallback) => t(key, { defaultValue: fallback }), roleGate)
+    }, [metadata, permissionsActive, can, model, t, roleGate])
 
     // Row-action menus mount their icons on open: load them with the
     // metadata so the first open draws every glyph at once.
@@ -1396,12 +1424,12 @@ export function DynamicTable({
             }
             return actions === viewMetadata.actions ? viewMetadata : { ...viewMetadata, actions }
         })()
-        const baseColumns = getDynamicColumns(rowMetadata, handleInternalAction, t, i18n.language, columnFilterConfigs, timeZone, currency)
+        const baseColumns = getDynamicColumns(rowMetadata, handleInternalAction, t, i18n.language, columnFilterConfigs, timeZone, currency, rowActionPredicate)
         const filteredBase = baseColumns.filter((col: ColumnDef<any>) => !effectiveHiddenColumns.includes(col.id as string))
         const actionsCol = filteredBase.find((c: ColumnDef<any>) => c.id === 'actions')
         const otherCols = filteredBase.filter((c: ColumnDef<any>) => c.id !== 'actions')
         return [...otherCols, ...extraColumns, ...(actionsCol ? [actionsCol] : [])]
-    }, [viewMetadata, handleInternalAction, effectiveHiddenColumns, allowedActionKeys, extraColumns, t, i18n.language, columnFilterConfigs, getDynamicColumns, timeZone, currency])
+    }, [viewMetadata, handleInternalAction, effectiveHiddenColumns, allowedActionKeys, extraColumns, t, i18n.language, columnFilterConfigs, getDynamicColumns, timeZone, currency, rowActionPredicate])
 
     const filters = useMemo(() => [], [])
 
@@ -1979,6 +2007,8 @@ export function DynamicTable({
                         selectedIds: bulkSelectedRows.map((r) => r.id).filter((id) => id != null),
                         clearSelection: () => table.resetRowSelection(),
                         refresh: handleRefresh,
+                        actions: viewMetadata?.actions ?? [],
+                        can: (actionKey: string) => !permissionsActive || can(modelCapability(model, actionKey)),
                     })
                     : extraBulkActions}
                 {!hideBulkDelete && (

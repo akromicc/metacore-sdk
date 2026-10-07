@@ -259,12 +259,15 @@ export {
     PermissionsProvider,
     useCan,
     usePermissionsActive,
+    useRoleGate,
+    isActionAllowedForRoles,
     makeCan,
     capabilityForActionKey,
     modelCapability,
     gateTableMetadata,
     resolveRowActions,
     type CanFn,
+    type RoleGate,
     type PermissionsProviderProps,
 } from './permissions-context'
 export {
@@ -423,6 +426,7 @@ export type {
     ColumnFilterConfig,
     FilterOption as DynamicColumnFilterOption,
     GetDynamicColumns,
+    RowActionPredicate,
     DynamicIconComponent,
 } from './dynamic-columns-shim'
 export {
@@ -430,6 +434,7 @@ export {
     makeDefaultGetDynamicColumns,
     relationKeyFor,
     resolveAvatarSrc,
+    resolveImageSrc,
     resolveMissingActorLabel,
     resolveActorDisplayName,
     resolveRelationLabel,
