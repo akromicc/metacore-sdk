@@ -1,5 +1,11 @@
 # @asteby/metacore-starter-vite
 
+## 0.1.307
+
+### Patch Changes
+
+- @asteby/metacore-pwa@0.7.1
+
 ## 0.1.306
 
 ### Patch Changes
