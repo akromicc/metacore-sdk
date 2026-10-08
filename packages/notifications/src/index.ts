@@ -31,7 +31,9 @@ export {
   formatQtyDisplay,
 } from './rich-text'
 export type {
+  NotificationId,
   NotificationItem,
+  NotificationListResult,
   NotificationType,
   NotificationsApiClient,
   NotificationWsPayload,
