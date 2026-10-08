@@ -559,6 +559,15 @@ export {
     type ModelExtensionProps,
 } from './model-extension-registry'
 export {
+    registerFieldWidget,
+    getFieldWidget,
+    listFieldWidgets,
+    clearFieldWidgets,
+    useFieldWidgetRegistryVersion,
+    type FieldWidgetComponent,
+    type FieldWidgetProps,
+} from './field-widget-registry'
+export {
     registerAgentResultRenderer,
     resolveAgentResultRenderer,
     listAgentResultRenderers,

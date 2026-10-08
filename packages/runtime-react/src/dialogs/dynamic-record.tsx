@@ -87,6 +87,7 @@ import { generateBadgeStyles } from '@asteby/metacore-ui/lib'
 import { CollectionCell, type ItemField } from '../collection-cell'
 import type { ActionFieldDef, RelationMeta } from '../types'
 import { ImageUrlContext, identityImageUrl, type GetImageUrl } from '../image-url-context'
+import { getFieldWidget, useFieldWidgetRegistryVersion } from '../field-widget-registry'
 import { TimeZoneContext, CurrencyContext } from '../org-runtime-context'
 
 // Re-export the resolver type so `index.ts`'s
@@ -1397,7 +1398,7 @@ function FieldRow({ field, record, value, mode, onChange, error, locked }: Field
             ) : isEditReadonly ? (
                 <ReadonlyEditField field={field} value={value} />
             ) : (
-                <EditField field={field} value={value} onChange={onChange} record={record} invalid={!!error} />
+                <EditField field={field} value={value} onChange={onChange} record={record} invalid={!!error} error={error} />
             )}
 
             {error && mode !== 'view' && (
@@ -1412,7 +1413,14 @@ function FieldRow({ field, record, value, mode, onChange, error, locked }: Field
 // edits. Booleans render as a disabled switch to match their editable
 // counterpart; everything else renders the formatted display value in a disabled
 // text input.
+const noopChange = () => {}
+
 export function ReadonlyEditField({ field, value }: { field: FieldDef; value: any }) {
+    useFieldWidgetRegistryVersion()
+    const HostWidget = getFieldWidget(field.widget)
+    if (HostWidget) {
+        return <HostWidget field={field as unknown as ActionFieldDef} value={value} onChange={noopChange} disabled />
+    }
     if (field.type === 'boolean' || field.type === 'checkbox' || typeof value === 'boolean') {
         return (
             <div className="flex items-center gap-2 py-1">
@@ -2040,7 +2048,7 @@ function JsonObjectViewValue({ value }: { value: Record<string, unknown> }) {
     )
 }
 
-export function EditField({ field, value, onChange, record, invalid }: {
+export function EditField({ field, value, onChange, record, invalid, error }: {
     field: FieldDef
     value: any
     onChange: (val: any) => void
@@ -2048,6 +2056,8 @@ export function EditField({ field, value, onChange, record, invalid }: {
     record?: any
     /** When true, paint the control with a destructive border (Laravel-style). */
     invalid?: boolean
+    /** Validation message, forwarded to a host-registered field widget. */
+    error?: string
 }) {
     const invalidCls = invalid
         ? 'border-destructive ring-1 ring-destructive/30 focus-visible:ring-destructive aria-invalid:border-destructive'
@@ -2056,6 +2066,22 @@ export function EditField({ field, value, onChange, record, invalid }: {
     const { t, i18n } = useTranslation()
     const editFieldImageUrl = useContext(ImageUrlContext)
     const dialogModel = useContext(RecordDialogModelContext)
+
+    // Host-registered widget (`widget: "<name>"`) wins over every built-in and
+    // type-based branch. Unregistered names fall through untouched.
+    useFieldWidgetRegistryVersion()
+    const HostWidget = getFieldWidget(field.widget)
+    if (HostWidget) {
+        return (
+            <HostWidget
+                field={field as unknown as ActionFieldDef}
+                value={value}
+                onChange={onChange}
+                error={error}
+                record={record}
+            />
+        )
+    }
 
     // Jsonb line-items columns (e.g. Transfer.items) are action-built documents:
     // editing the array field-by-field is out of scope. Render them READ-ONLY
