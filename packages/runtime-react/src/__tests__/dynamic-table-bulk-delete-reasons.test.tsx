@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
 // DynamicTable bulk delete: the error toast keeps the count and adds the
-// server's refusal reasons (grouped, truncated, plain text) as `description`;
+// server's refusal reasons (grouped, truncated, as a string with line breaks) as `description`;
 // `onBulkDeleteResult` reports the outcome per id.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -149,5 +149,76 @@ describe('DynamicTable bulk delete reasons', () => {
         const d = toastMock.error.mock.calls[0][1].description
         expect(typeof d).toBe('string')
         expect(d).toBe(`• ${evil}`)
+    })
+
+    it('ignores generic axios messages as a reason', async () => {
+        const onResult = vi.fn()
+        const api = fakeApi({})
+        ;(api.delete as any).mockImplementationOnce(async () => { throw new Error('Request failed with status code 500') })
+        ;(api.delete as any).mockImplementationOnce(async () => { throw new Error('Network Error') })
+        ;(api.delete as any).mockImplementationOnce(async () => { throw new Error('timeout of 5000ms exceeded') })
+        await runBulkDelete(api, onResult)
+        expect(toastMock.error.mock.calls[0][1]).toBeUndefined()
+        for (const f of onResult.mock.calls[0][0].failed) expect(f.message).toBeUndefined()
+    })
+
+    it('prefers the server message over the generic axios one', async () => {
+        const api = fakeApi({})
+        ;(api.delete as any).mockImplementationOnce(async () => {
+            throw Object.assign(new Error('Request failed with status code 409'), { response: { status: 409, data: { message: 'Motivo real' } } })
+        })
+        await runBulkDelete(api)
+        expect(toastMock.error.mock.calls[0][1].description).toBe('• Motivo real')
+    })
+
+    it('counts a cancelled reason prompt as a failure without message or description', async () => {
+        const onResult = vi.fn()
+        const api = fakeApi({})
+        ;(api.delete as any).mockImplementationOnce(async () => {
+            throw Object.assign(new Error('x'), {
+                response: { status: 422, data: { errors: { reason: [{ code: 'required', params: { min: 3 } }] } } },
+            })
+        })
+        render(
+            <ApiProvider client={api}>
+                <DynamicTable model="patient" enableUrlSync={false} getDynamicColumns={getDynamicColumns} onBulkDeleteResult={onResult} />
+            </ApiProvider>,
+        )
+        await screen.findAllByText('Row 1')
+        fireEvent.click(screen.getAllByRole('checkbox')[0])
+        fireEvent.click(await screen.findByText('Eliminar'))
+        fireEvent.click(await screen.findByText('Eliminar todos'))
+        const cancel = await screen.findByPlaceholderText('Explica por qué. Queda en la bitácora.')
+        expect(cancel).toBeTruthy()
+        const dialog = cancel.closest('[role="dialog"]') as HTMLElement
+        fireEvent.click(Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Cancelar')!)
+        await waitFor(() => expect(toastMock.error).toHaveBeenCalled(), { timeout: 5000 })
+        expect(toastMock.error.mock.calls[0][0]).toBe('5 registro(s) no pudieron ser eliminados')
+        expect(toastMock.error.mock.calls[0][1]).toBeUndefined()
+        const { succeeded, failed } = onResult.mock.calls[0][0]
+        expect(succeeded).toEqual([])
+        expect(failed.map((f: any) => f.id)).toEqual([1, 2, 3, 4, 5])
+        for (const f of failed) expect(f.message).toBeUndefined()
+        expect(api.delete).toHaveBeenCalledTimes(1)
+    })
+
+    it('still refreshes the table when onBulkDeleteResult throws, with no unhandled rejection', async () => {
+        const unhandled = vi.fn()
+        process.on('unhandledRejection', unhandled)
+        const api = fakeApi({ 2: { status: 409, message: MSG } })
+        const listCalls = () => (api.get as any).mock.calls.filter(([u]: [string]) => !u.startsWith('/metadata/') && !u.endsWith('/facets')).length
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            let before = -1
+            await runBulkDelete(api, () => { before = listCalls(); throw new Error('boom') })
+            expect(before).toBeGreaterThan(0)
+            await waitFor(() => expect(listCalls()).toBeGreaterThan(before), { timeout: 5000 })
+            await new Promise((r) => setTimeout(r, 50))
+            expect(unhandled).not.toHaveBeenCalled()
+            expect(err.mock.calls.some((c) => String(c[0]).includes('onBulkDeleteResult'))).toBe(true)
+        } finally {
+            process.off('unhandledRejection', unhandled)
+            err.mockRestore()
+        }
     })
 })

@@ -347,8 +347,21 @@ function cleanReason(v: unknown): string | undefined {
 }
 
 /**
+ * Axios' own technical messages ("Request failed with status code 500",
+ * "Network Error", "timeout of 5000ms exceeded") say nothing the user can act
+ * on, so they never count as a refusal reason. Real server text
+ * (`response.data.message`) is unaffected and always wins.
+ */
+const GENERIC_TRANSPORT_MESSAGE = /^(request failed with status code \d+|network error|timeout of \d+ms exceeded)$/i
+function cleanTransportMessage(v: unknown): string | undefined {
+    const m = cleanReason(v)
+    return m && !GENERIC_TRANSPORT_MESSAGE.test(m) ? m : undefined
+}
+
+/**
  * Groups refusal reasons ("• reason (×N)", at most 3 distinct, each truncated)
- * plus an "and N more" line. Plain text only - the toast renders it as text.
+ * plus an "and N more" line, as a string with line breaks. It is delivered as
+ * the toast `description`; how line breaks are shown depends on the host's toast.
  */
 function groupBulkReasons(failed: BulkDeleteResult['failed'], more: (count: number) => string): string | undefined {
     const counts = new Map<string, number>()
@@ -1279,7 +1292,7 @@ export function DynamicTable({
                 const err = e as { response?: { data?: { message?: unknown }; status?: number }; message?: unknown }
                 failed.push({
                     id: row.original.id,
-                    message: cleanReason(err?.response?.data?.message) ?? cleanReason(err?.message),
+                    message: cleanReason(err?.response?.data?.message) ?? cleanTransportMessage(err?.message),
                     status: err?.response?.status,
                 })
             }
@@ -1300,7 +1313,12 @@ export function DynamicTable({
                 reasons ? { description: reasons, style: { whiteSpace: 'pre-line' } } : undefined,
             )
         }
-        onBulkDeleteResult?.({ succeeded, failed })
+        // A throwing host callback must not skip the refresh nor leave a rejected promise.
+        try {
+            onBulkDeleteResult?.({ succeeded, failed })
+        } catch (e) {
+            console.error('onBulkDeleteResult lanzó un error', e)
+        }
         handleRefresh()
     }
 
