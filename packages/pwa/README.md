@@ -114,6 +114,45 @@ By default, `PushNotificationService` calls these endpoints on your injected `ap
 
 Override any path via `<PWAProvider pushOptions={{ publicKeyPath: '/v1/webpush/key' }} />`.
 
+## Política de actualización
+
+Por defecto (`updateStrategy="auto"`) nada cambia: el provider recarga en cada `controllerchange`. Con `updateStrategy="prompt"` la actualización la gobierna una política compartida, sin cambios de comportamiento para quien no la activa.
+
+```tsx
+<PWAProvider
+  api={api}
+  updateStrategy="prompt"
+  updateCheckIntervalMs={5 * 60_000}      // update() cada 5 min (solo pestaña visible) + al volver + focus
+  autoApplyAfterMs={24 * 60 * 60_000}     // opcional: aplicar solo tras 24 h esperando, en momento seguro
+  staleAutoApplyAfterMs={10 * 60_000}     // opcional: umbral cuando versionCheck detecta desfase
+  versionCheck={{
+    current: __APP_COMMIT__,              // versión embebida en el build (Vite `define`)
+    fetchLatest: async () => (await fetch('/health').then((r) => r.json())).commit,
+  }}
+>
+  <PWAUpdatePrompt />   {/* solo UI: toast compartido, se retrae con un modal abierto */}
+</PWAProvider>
+```
+
+Requisito: el `sw.js` no debe hacer `skipWaiting` al instalar, solo al mensaje `SKIP_WAITING` (como la plantilla incluida).
+
+| Opción | Default | Efecto |
+|---|---|---|
+| `dismissTtlMs` | 1 h | "Después" oculta el aviso ese tiempo |
+| (interno) `acceptedTtlMs` | 2 min | tras "Actualizar", un SW aún en espera se aplica sin re-preguntar |
+| `autoApplyAfterMs` | `undefined` | **nunca** auto-aplica; si se define, aplica al cumplirse y en momento seguro (también si se descartó el aviso) |
+| `staleAutoApplyAfterMs` | `undefined` | umbral usado mientras `versionCheck` indique que el cliente está desfasado (gana el menor de los dos) |
+| `isSafeToApply` | ver abajo | reemplaza el test de momento seguro |
+| `versionCheck` | — | `{ current, fetchLatest, intervalMs = 5 min }`. Si `fetchLatest()` difiere de `current` se marca *stale* y se fuerza `registration.update()` al instante. La librería no asume el endpoint |
+
+**Momento seguro** (por defecto; un `apply` nunca ocurre sin él): sin diálogo Radix abierto; sin campo enfocado con contenido ni campo en el que el usuario escribió (evento `input` de confianza, últimos 30 min) que aún tenga contenido (los campos precargados/autocompletados no cuentan); y pestaña oculta, o usuario inactivo ≥ 60 s. Se reevalúa cada 15 s mientras hay una actualización esperando.
+
+**Recarga**: una sola, solo tras `SKIP_WAITING` -> `controllerchange`, con fallback a 5 s. En modo `prompt` un `controllerchange` ajeno (otra pestaña) no recarga esta.
+
+Los estados de persistencia (`metacore_pwa_update_*` en `localStorage`) permiten que `autoApplyAfterMs` cuente desde la primera vez que se vio la actualización aunque el usuario recargue sin activarla. Si el storage no está disponible la política degrada a solo-sesión.
+
+Capas reutilizables: `decideUpdate` / `isSafeSnapshot` (puras), `createUpdateController` (sin React) y `useServiceWorkerUpdate` (hook) para hosts que no usan `PWAProvider`.
+
 ## Exports
 
 ```ts

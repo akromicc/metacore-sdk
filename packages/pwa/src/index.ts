@@ -19,6 +19,29 @@ export {
 } from './notification-manager'
 export type { NotificationOptions, NotificationManagerOptions } from './notification-manager'
 
+export {
+  decideUpdate,
+  resolveUpdatePolicy,
+  autoApplyThreshold,
+  isWithinTtl,
+  DEFAULT_UPDATE_POLICY,
+} from './update-policy'
+export type { UpdatePolicy, UpdateState, UpdateDecision } from './update-policy'
+export { isSafeSnapshot, readSafetySnapshot, installActivityTracking } from './dom-safety'
+export type { SafetySnapshot, SafetyOptions } from './dom-safety'
+export { createUpdateController } from './update-controller'
+export type {
+  UpdateController,
+  UpdateControllerOptions,
+  UpdateSnapshot,
+  VersionCheck,
+} from './update-controller'
+export { useServiceWorkerUpdate } from './use-service-worker-update'
+export type {
+  UseServiceWorkerUpdateOptions,
+  UseServiceWorkerUpdateResult,
+} from './use-service-worker-update'
+
 export { useModalOpen, hasOpenModal } from './use-modal-open'
 
 export {
