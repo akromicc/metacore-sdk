@@ -39,8 +39,8 @@ import { DynamicDateField } from './dynamic-date-field'
 import { UploadField } from './upload-field'
 import { IconPickerField } from './icon-picker-field'
 import { ColorPickerField } from './color-picker-field'
-
 import { getFieldWidget, useFieldWidgetRegistryVersion } from './field-widget-registry'
+
 export { buildZodSchema, resolveWidget }
 export { DynamicLineItems } from './dynamic-line-items'
 export { DynamicSelectField } from './dynamic-select-field'
@@ -428,6 +428,7 @@ function FieldRenderer({
     value,
     onChange,
     initialValues,
+    values,
     effectiveOptions,
     error,
 }: FieldRendererProps & { effectiveOptions?: import('./types').OptionDef[]; error?: string }) {
@@ -436,7 +437,7 @@ function FieldRenderer({
     useFieldWidgetRegistryVersion()
     const HostWidget = getFieldWidget(field.widget)
     if (HostWidget) {
-        return <HostWidget field={field} value={value} onChange={onChange} error={error} record={initialValues} />
+        return <HostWidget field={field} value={value} onChange={onChange} error={error} record={values} />
     }
     // Repeatable line-items group → render the row grid. Its value is an array
     // of row objects rather than a scalar.

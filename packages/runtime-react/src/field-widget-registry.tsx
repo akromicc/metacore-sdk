@@ -31,7 +31,11 @@ export interface FieldWidgetProps {
     disabled?: boolean
     /** Validation message for the field, when there is one. */
     error?: string
-    /** The record being edited (create mode: the initial values), for sibling fields. */
+    /**
+     * Record the widget can read sibling fields from. In `DynamicForm` these are the
+     * LIVE form values (they update as the user types, also in create mode); in the
+     * record dialog (`EditField`) it is the loaded/edited record.
+     */
     record?: Record<string, any>
 }
 

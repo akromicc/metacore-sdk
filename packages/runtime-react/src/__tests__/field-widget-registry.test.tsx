@@ -87,6 +87,25 @@ describe('DynamicForm con widget registrado', () => {
         expect(onSubmit.mock.calls[0][0]).toMatchObject({ location: '19.43,-99.13' })
     })
 
+    it('record son los valores vivos del form: un widget ve el cambio de un campo hermano (modo crear)', () => {
+        function SiblingWidget({ record }: FieldWidgetProps) {
+            return <span data-testid="sib">{String(record?.name ?? '')}</span>
+        }
+        registerFieldWidget('sib', SiblingWidget)
+        render(
+            <DynamicForm
+                fields={[
+                    { key: 'name', label: 'Nombre', type: 'text' } as any,
+                    { key: 'extra', label: 'Extra', type: 'text', widget: 'sib' } as any,
+                ]}
+                onSubmit={vi.fn()}
+            />,
+        )
+        expect(screen.getByTestId('sib').textContent).toBe('')
+        fireEvent.change(document.querySelector('input#name') as HTMLInputElement, { target: { value: 'Ana' } })
+        expect(screen.getByTestId('sib').textContent).toBe('Ana')
+    })
+
     it('sin registro conserva el render por type', () => {
         render(<DynamicForm fields={[pinField as any]} initialValues={{ location: 'a' }} onSubmit={vi.fn()} />)
         expect(screen.queryByTestId('pin')).toBeNull()
