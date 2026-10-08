@@ -34,6 +34,7 @@ import {
     SelectTrigger,
     SelectValue,
     Switch,
+    Checkbox,
     Skeleton,
     Badge,
     Popover,
@@ -54,6 +55,7 @@ import { toastServerError, extractFieldErrors, localizeFieldIssue, localizeField
 import { DynamicSelectField, OptionLead, OptionThumb } from '../dynamic-select-field'
 import { RecordPicker } from '../record-picker'
 import { DynamicMultiSelectField } from '../dynamic-multi-select-field'
+import { UploadField } from '../upload-field'
 import { DynamicRelations } from '../dynamic-relations'
 import { AuditInfo, readAuditMeta } from '../audit-info'
 import type { AuditMeta } from '../types'
@@ -108,7 +110,8 @@ export interface FieldOption {
 export interface FieldDef {
     key: string
     label: string
-    type: 'text' | 'textarea' | 'select' | 'search' | 'number' | 'date' | 'email' | 'url' | 'boolean' | 'image' | string
+    type: 'text' | 'textarea' | 'select' | 'search' | 'number' | 'date' | 'email' | 'url' | 'boolean' | 'image'
+        | 'password' | 'phone' | 'tel' | 'checkbox' | 'time' | 'hidden' | 'multiselect' | 'file' | string
     required?: boolean
     options?: FieldOption[]
     defaultValue?: any
@@ -393,6 +396,9 @@ export function isLineItemsField(field: FieldDef, value: any): boolean {
     // inline-table branch just because its current value is an array
     // (including the [] default on a freshly-created record).
     if ((field as ActionFieldDef).multiple) return false
+    // `multiselect` stores a plain array of ids/values (editable picker), not a
+    // structured line-items document.
+    if (field.type === 'multiselect') return false
     if (fieldItemFields(field)?.length) return true
     if (Array.isArray(value)) return true
     return (
@@ -475,7 +481,11 @@ function formatDisplayValue(rawValue: any, field: FieldDef): string {
     if (value === null || value === undefined || value === '') return '—'
     const objLabel = objectLabel(value)
     if (objLabel !== undefined) return objLabel
-    if (field.type === 'boolean' || typeof value === 'boolean') return value ? 'Sí' : 'No'
+    if (field.type === 'boolean' || field.type === 'checkbox' || typeof value === 'boolean') return value ? 'Sí' : 'No'
+    if (isPasswordField(field)) return '••••••••'
+    if (field.type === 'multiselect' && Array.isArray(value)) {
+        return value.map(v => field.options?.find(o => o.value === String(v))?.label ?? String(v)).join(', ')
+    }
 
     if (field.type === 'select' && field.options?.length) {
         const match = field.options.find(o => o.value === String(value))
@@ -564,7 +574,7 @@ export function filterVisibleFields(
 ): FieldDef[] {
     const values = formValues && attributeClasses ? { ...formValues, [ATTRIBUTE_CLASSES_KEY]: attributeClasses } : formValues
     return (fields ?? []).filter(f => {
-        if (f.hidden) return false
+        if (f.hidden || f.type === 'hidden') return false
         if (mode === 'create' && f.readonly) return false
         if (values && !evaluateVisibleWhen(getVisibleWhen(f), values)) return false
         return true
@@ -591,6 +601,24 @@ export function stripHiddenFieldValues(
         const field = (fields ?? []).find(f => f.key === key)
         if (field && !visibleKeys.has(key) && getVisibleWhen(field)) continue
         out[key] = value
+    }
+    return out
+}
+
+/** `password` fields are write-only: never prefilled, never shown, and an empty value is not submitted. */
+const isPasswordField = (f: FieldDef | undefined): boolean => f?.type === 'password'
+
+// dropEmptyPasswords removes empty `password` fields from a submit payload:
+// on edit an empty password means "keep the current one" (the record never
+// carries it, so the input starts blank); on create an optional empty password
+// must not send "" to the server either.
+export function dropEmptyPasswords(
+    values: Record<string, any>,
+    fields: FieldDef[] | undefined,
+): Record<string, any> {
+    const out = { ...values }
+    for (const f of fields ?? []) {
+        if (isPasswordField(f) && (out[f.key] === '' || out[f.key] == null)) delete out[f.key]
     }
     return out
 }
@@ -697,7 +725,9 @@ export function DynamicRecordDialog({
         const seedForm = (meta: ModalMetadata, rec: any) => {
             const initial: Record<string, any> = {}
             for (const field of meta.fields ?? []) {
-                initial[field.key] = resolvePath(rec, field.key) ?? field.defaultValue ?? ''
+                initial[field.key] = isPasswordField(field)
+                    ? ''
+                    : resolvePath(rec, field.key) ?? field.defaultValue ?? ''
             }
             setFormValues(initial)
         }
@@ -840,6 +870,7 @@ export function DynamicRecordDialog({
                     setFormValues(prev => {
                         const next = { ...prev }
                         for (const field of modalMeta?.fields ?? []) {
+                            if (isPasswordField(field)) continue
                             const v = resolvePath(rec, field.key)
                             if (v !== undefined) next[field.key] = v
                         }
@@ -941,7 +972,10 @@ export function DynamicRecordDialog({
 
         // Empty reference pickers → null (not "" / nil-UUID) so nullable FK
         // columns accept them instead of raising a 23503 FK violation.
-        let payload = normalizeRefFieldsForSubmit(submittedValues, modalMeta.fields)
+        let payload = dropEmptyPasswords(
+            normalizeRefFieldsForSubmit(submittedValues, modalMeta.fields),
+            modalMeta.fields,
+        )
 
         if (
             isCreate &&
@@ -1362,7 +1396,7 @@ function FieldRow({ field, record, value, mode, onChange, error, locked }: Field
 // counterpart; everything else renders the formatted display value in a disabled
 // text input.
 export function ReadonlyEditField({ field, value }: { field: FieldDef; value: any }) {
-    if (field.type === 'boolean' || typeof value === 'boolean') {
+    if (field.type === 'boolean' || field.type === 'checkbox' || typeof value === 'boolean') {
         return (
             <div className="flex items-center gap-2 py-1">
                 <Switch checked={!!value} disabled />
@@ -1580,7 +1614,7 @@ export function ViewValue({
         return <p className="text-sm py-1">{inlineLabel}</p>
     }
 
-    if (field.type === 'boolean' || typeof value === 'boolean') {
+    if (field.type === 'boolean' || field.type === 'checkbox' || typeof value === 'boolean') {
         return (
             <div className="flex items-center gap-2 py-1">
                 <Switch checked={!!value} disabled />
@@ -2044,6 +2078,38 @@ export function EditField({ field, value, onChange, record, invalid }: {
         )
     }
 
+    // Checkbox: boolean like `boolean`, rendered as a checkbox with its label.
+    if (field.type === 'checkbox') {
+        return (
+            <div className="flex items-center gap-2 py-1">
+                <Checkbox
+                    checked={value === true || value === 'true'}
+                    onCheckedChange={(c: boolean | 'indeterminate') => onChange(c === true)}
+                    aria-invalid={invalid || undefined}
+                />
+            </div>
+        )
+    }
+
+    // Multiselect: array of ids/values. A `ref`/`searchEndpoint` resolves options
+    // remotely (same contract as `multiple`); otherwise the static `options`.
+    if (field.type === 'multiselect') {
+        return (
+            <DynamicMultiSelectField
+                field={field as ActionFieldDef}
+                value={value}
+                onChange={onChange}
+                staticOptions={field.options}
+            />
+        )
+    }
+
+    // File: generic uploader (POST to the host upload endpoint, stores the
+    // returned url/path). `image` / `widget: 'upload'` keep the image dropzone.
+    if (field.type === 'file') {
+        return <UploadField field={field as ActionFieldDef} value={value} onChange={onChange} />
+    }
+
     if (field.type === 'textarea') {
         return (
             <Textarea
@@ -2221,7 +2287,13 @@ export function EditField({ field, value, onChange, record, invalid }: {
         ? 'number'
         : field.type === 'email'
             ? 'email'
-            : 'text'
+            : field.type === 'password'
+                ? 'password'
+                : field.type === 'phone' || field.type === 'tel'
+                    ? 'tel'
+                    : field.type === 'time'
+                        ? 'time'
+                        : 'text'
 
     return <ScannableRecordInput field={field} value={value} onChange={onChange} inputType={inputType} invalid={invalid} className={invalidCls} />
 }
@@ -2270,6 +2342,7 @@ function ScannableRecordInput({
                 )
             }
             placeholder={field.placeholder}
+            autoComplete={inputType === 'password' ? 'new-password' : undefined}
             aria-invalid={invalid || undefined}
             className={className}
         />
