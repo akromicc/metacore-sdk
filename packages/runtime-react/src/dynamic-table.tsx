@@ -298,6 +298,13 @@ export interface DynamicTableProps {
     /** Hide the built-in bulk "Eliminar" (e.g. a model whose rows must not be deleted in batch). */
     hideBulkDelete?: boolean
     /**
+     * Called once when a built-in bulk delete finishes, with the ids that were
+     * deleted and the ones refused (`message` / `status` come from the server
+     * response when available; a cancelled reason prompt has no message). Lets a
+     * host persist or log the outcome. The table's own toasts are unaffected.
+     */
+    onBulkDeleteResult?: (result: BulkDeleteResult) => void
+    /**
      * First-use content shown instead of "No se encontraron resultados" when the
      * list loaded fine, is empty, and no search/filter is active. Never shown
      * after a load error (a retry is offered) or a 403.
@@ -321,6 +328,40 @@ export interface DynamicTableBulkContext {
 function isForbiddenError(error: unknown): boolean {
     const e = error as { response?: { status?: number }; status?: number } | null
     return e?.response?.status === 403 || e?.status === 403
+}
+
+/** Outcome of a built-in bulk delete (see `onBulkDeleteResult`). */
+export interface BulkDeleteResult {
+    succeeded: Array<string | number>
+    failed: Array<{ id: string | number; message?: string; status?: number }>
+}
+
+const BULK_REASON_MAX_LEN = 200
+const BULK_REASON_MAX_GROUPS = 3
+
+/** Server text -> trimmed plain string, or undefined when there is nothing usable. */
+function cleanReason(v: unknown): string | undefined {
+    if (typeof v !== 'string') return undefined
+    const m = v.trim()
+    return m ? m : undefined
+}
+
+/**
+ * Groups refusal reasons ("• reason (×N)", at most 3 distinct, each truncated)
+ * plus an "and N more" line. Plain text only - the toast renders it as text.
+ */
+function groupBulkReasons(failed: BulkDeleteResult['failed'], more: (count: number) => string): string | undefined {
+    const counts = new Map<string, number>()
+    for (const f of failed) {
+        if (!f.message) continue
+        const m = f.message.length > BULK_REASON_MAX_LEN ? `${f.message.slice(0, BULK_REASON_MAX_LEN - 1)}…` : f.message
+        counts.set(m, (counts.get(m) ?? 0) + 1)
+    }
+    if (counts.size === 0) return undefined
+    const entries = Array.from(counts.entries())
+    const lines = entries.slice(0, BULK_REASON_MAX_GROUPS).map(([m, n]) => (n > 1 ? `• ${m} (×${n})` : `• ${m}`))
+    if (entries.length > BULK_REASON_MAX_GROUPS) lines.push(more(entries.length - BULK_REASON_MAX_GROUPS))
+    return lines.join('\n')
 }
 
 export function DynamicTable({
@@ -347,6 +388,7 @@ export function DynamicTable({
     virtualizeRows,
     extraBulkActions,
     hideBulkDelete,
+    onBulkDeleteResult,
     emptyState,
 }: DynamicTableProps) {
     // The org's timezone/currency: an explicit prop wins, else the app-wide
@@ -1207,14 +1249,15 @@ export function DynamicTable({
         setIsBulkDeleting(true)
         setBulkDeleteTotal(selectedRows.length)
         setBulkDeleteProgress(0)
-        let successCount = 0, errorCount = 0
+        const succeeded: BulkDeleteResult['succeeded'] = []
+        const failed: BulkDeleteResult['failed'] = []
         // One reason for the whole batch: asked the first time a row is refused
         // for lacking it (model declares reason_required.delete), reused after.
         let bulkReason: string | undefined
         let bulkCancelled = false
         for (let i = 0; i < selectedRows.length; i++) {
             const row = selectedRows[i]
-            if (bulkCancelled) { errorCount++; setBulkDeleteProgress(i + 1); continue }
+            if (bulkCancelled) { failed.push({ id: row.original.id }); setBulkDeleteProgress(i + 1); continue }
             try {
                 const writeBase = mutationEndpoint ?? endpoint
                 const deleteEndpoint = writeBase ? `${writeBase}/${row.original.id}` : `/data/${model}/${row.original.id}`
@@ -1228,10 +1271,18 @@ export function DynamicTable({
                         return api.delete(deleteEndpoint, reason ? { params: { reason } } : undefined)
                     },
                 })
-                if (!res) { bulkCancelled = true; errorCount++ }
-                else if (res.data.success) successCount++
-                else errorCount++
-            } catch (e) { console.error('Error al eliminar', e); errorCount++ }
+                if (!res) { bulkCancelled = true; failed.push({ id: row.original.id }) }
+                else if (res.data.success) succeeded.push(row.original.id)
+                else failed.push({ id: row.original.id, message: cleanReason(res.data.message) })
+            } catch (e) {
+                console.error('Error al eliminar', e)
+                const err = e as { response?: { data?: { message?: unknown }; status?: number }; message?: unknown }
+                failed.push({
+                    id: row.original.id,
+                    message: cleanReason(err?.response?.data?.message) ?? cleanReason(err?.message),
+                    status: err?.response?.status,
+                })
+            }
             setBulkDeleteProgress(i + 1)
         }
         await new Promise(resolve => setTimeout(resolve, 500))
@@ -1240,8 +1291,16 @@ export function DynamicTable({
         setBulkDeleteProgress(0)
         setBulkDeleteTotal(0)
         setRowSelection({})
+        const successCount = succeeded.length, errorCount = failed.length
         if (successCount > 0) toast.success(t('dynamic.bulk_delete_success', { count: successCount, defaultValue: '{{count}} registro(s) eliminado(s) correctamente' }))
-        if (errorCount > 0) toast.error(t('dynamic.bulk_delete_error', { count: errorCount, defaultValue: '{{count}} registro(s) no pudieron ser eliminados' }))
+        if (errorCount > 0) {
+            const reasons = groupBulkReasons(failed, (count) => t('dynamic.bulk_delete_error_more', { count, defaultValue: 'y {{count}} más' }))
+            toast.error(
+                t('dynamic.bulk_delete_error', { count: errorCount, defaultValue: '{{count}} registro(s) no pudieron ser eliminados' }),
+                reasons ? { description: reasons, style: { whiteSpace: 'pre-line' } } : undefined,
+            )
+        }
+        onBulkDeleteResult?.({ succeeded, failed })
         handleRefresh()
     }
 
