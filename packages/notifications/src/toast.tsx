@@ -157,6 +157,14 @@ export function showNotificationToast(opts: ShowNotificationToastOptions): strin
   const body = (opts.body || '').trim()
   const plainBody = opts.richText === false
   const bodyHtml = plainBody ? '' : formatNotificationBodyHtml(body)
+  // Multi-line bodies (e.g. a bulk-delete summary: "• motivo (×2)\n• otro\ny 2 más")
+  // keep their line breaks and get a taller clamp. We rely on CSS
+  // `white-space: pre-line` instead of rewriting "\n" into <br> in the HTML:
+  // the sanitizer/escaper output is never touched (no injection surface, no
+  // double processing) and the browser does the break. One-line bodies keep
+  // the exact classes they always had.
+  const multiline = body.includes('\n')
+  const bodyClamp = multiline ? 'whitespace-pre-line line-clamp-6' : 'line-clamp-2'
   const hasActions = Boolean(opts.action || opts.cancel)
   // Title-only: vertically center with the icon. Chip/body/actions keep items-start.
   const titleOnly = !apartado && !body && !hasActions
@@ -201,12 +209,12 @@ export function showNotificationToast(opts: ShowNotificationToastOptions): strin
             ) : null}
             <span className='block text-sm font-semibold text-foreground'>{opts.title}</span>
             {plainBody && body ? (
-              <span className='mt-0.5 block text-xs text-muted-foreground line-clamp-2'>
+              <span className={`mt-0.5 block text-xs text-muted-foreground ${bodyClamp}`}>
                 {body}
               </span>
             ) : bodyHtml ? (
               <span
-                className='mt-0.5 block text-xs text-muted-foreground line-clamp-2 [&_strong]:font-semibold [&_strong]:text-foreground/85 [&_b]:font-semibold [&_b]:text-foreground/85 [&_em]:italic [&_i]:italic [&_u]:underline [&_mark]:rounded-sm [&_mark]:bg-amber-500/20 [&_mark]:px-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[10px]'
+                className={`mt-0.5 block text-xs text-muted-foreground ${bodyClamp} [&_strong]:font-semibold [&_strong]:text-foreground/85 [&_b]:font-semibold [&_b]:text-foreground/85 [&_em]:italic [&_i]:italic [&_u]:underline [&_mark]:rounded-sm [&_mark]:bg-amber-500/20 [&_mark]:px-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[10px]`}
                 dangerouslySetInnerHTML={{ __html: bodyHtml }}
               />
             ) : null}
