@@ -34,6 +34,7 @@ import {
     SelectTrigger,
     SelectValue,
     Switch,
+    Checkbox,
     Skeleton,
     Badge,
     Popover,
@@ -54,6 +55,7 @@ import { toastServerError, extractFieldErrors, localizeFieldIssue, localizeField
 import { DynamicSelectField, OptionLead, OptionThumb } from '../dynamic-select-field'
 import { RecordPicker } from '../record-picker'
 import { DynamicMultiSelectField } from '../dynamic-multi-select-field'
+import { UploadField } from '../upload-field'
 import { DynamicRelations } from '../dynamic-relations'
 import { AuditInfo, readAuditMeta } from '../audit-info'
 import type { AuditMeta } from '../types'
@@ -85,6 +87,7 @@ import { generateBadgeStyles } from '@asteby/metacore-ui/lib'
 import { CollectionCell, type ItemField } from '../collection-cell'
 import type { ActionFieldDef, RelationMeta } from '../types'
 import { ImageUrlContext, identityImageUrl, type GetImageUrl } from '../image-url-context'
+import { getFieldWidget, useFieldWidgetRegistryVersion } from '../field-widget-registry'
 import { TimeZoneContext, CurrencyContext } from '../org-runtime-context'
 
 // Re-export the resolver type so `index.ts`'s
@@ -108,7 +111,8 @@ export interface FieldOption {
 export interface FieldDef {
     key: string
     label: string
-    type: 'text' | 'textarea' | 'select' | 'search' | 'number' | 'date' | 'email' | 'url' | 'boolean' | 'image' | string
+    type: 'text' | 'textarea' | 'select' | 'search' | 'number' | 'date' | 'email' | 'url' | 'boolean' | 'image'
+        | 'password' | 'phone' | 'tel' | 'checkbox' | 'time' | 'hidden' | 'multiselect' | 'file' | string
     required?: boolean
     options?: FieldOption[]
     defaultValue?: any
@@ -393,6 +397,9 @@ export function isLineItemsField(field: FieldDef, value: any): boolean {
     // inline-table branch just because its current value is an array
     // (including the [] default on a freshly-created record).
     if ((field as ActionFieldDef).multiple) return false
+    // `multiselect` stores a plain array of ids/values (editable picker), not a
+    // structured line-items document.
+    if (field.type === 'multiselect') return false
     if (fieldItemFields(field)?.length) return true
     if (Array.isArray(value)) return true
     return (
@@ -475,7 +482,11 @@ function formatDisplayValue(rawValue: any, field: FieldDef): string {
     if (value === null || value === undefined || value === '') return '—'
     const objLabel = objectLabel(value)
     if (objLabel !== undefined) return objLabel
-    if (field.type === 'boolean' || typeof value === 'boolean') return value ? 'Sí' : 'No'
+    if (field.type === 'boolean' || field.type === 'checkbox' || typeof value === 'boolean') return value ? 'Sí' : 'No'
+    if (isPasswordField(field)) return '••••••••'
+    if (field.type === 'multiselect' && Array.isArray(value)) {
+        return value.map(v => field.options?.find(o => o.value === String(v))?.label ?? String(v)).join(', ')
+    }
 
     if (field.type === 'select' && field.options?.length) {
         const match = field.options.find(o => o.value === String(value))
@@ -564,7 +575,7 @@ export function filterVisibleFields(
 ): FieldDef[] {
     const values = formValues && attributeClasses ? { ...formValues, [ATTRIBUTE_CLASSES_KEY]: attributeClasses } : formValues
     return (fields ?? []).filter(f => {
-        if (f.hidden) return false
+        if (f.hidden || f.type === 'hidden') return false
         if (mode === 'create' && f.readonly) return false
         if (values && !evaluateVisibleWhen(getVisibleWhen(f), values)) return false
         return true
@@ -579,6 +590,11 @@ export function filterVisibleFields(
 // visible fields — hidden fields are dropped from BOTH the render/required-gate
 // AND the submitted values. Keys with no matching declared field, or whose
 // field carries no `visible_when`, always pass through (retrocompat).
+// NOTE: a `type:'hidden'` field is never in the visible set, so with a
+// `visible_when` it is ALWAYS stripped (even when the predicate is true);
+// without `visible_when` it passes through with its default. Pinned by tests.
+// TODO(deuda): hay dos resolvers de campos (EditField de este diálogo y
+// resolveWidget de dynamic-form); converger en uno solo.
 export function stripHiddenFieldValues(
     values: Record<string, any>,
     fields: FieldDef[] | undefined,
@@ -593,6 +609,36 @@ export function stripHiddenFieldValues(
         out[key] = value
     }
     return out
+}
+
+/** `password` fields are write-only: never prefilled, never shown, and an empty value is not submitted. */
+const isPasswordField = (f: FieldDef | undefined): boolean => f?.type === 'password'
+
+// dropEmptyPasswords removes empty `password` fields from a submit payload:
+// on edit an empty password means "keep the current one" (the record never
+// carries it, so the input starts blank); on create an optional empty password
+// must not send "" to the server either.
+export function dropEmptyPasswords(
+    values: Record<string, any>,
+    fields: FieldDef[] | undefined,
+): Record<string, any> {
+    const out = { ...values }
+    for (const f of fields ?? []) {
+        if (isPasswordField(f) && (out[f.key] === '' || out[f.key] == null)) delete out[f.key]
+    }
+    return out
+}
+
+// requiredGateFields leaves out, on edit, the password fields left empty: an
+// empty password on edit means "keep the current one" (it is not submitted), so
+// a `required` password must not block saving. On create it stays required.
+function requiredGateFields(
+    fields: FieldDef[],
+    mode: 'view' | 'edit' | 'create',
+    values: Record<string, any>,
+): FieldDef[] {
+    if (mode !== 'edit') return fields
+    return fields.filter(f => !(isPasswordField(f) && (values[f.key] === '' || values[f.key] == null)))
 }
 
 function applyEnsureFields(meta: ModalMetadata | null | undefined, ensureFields?: FieldDef[]): ModalMetadata | null {
@@ -697,7 +743,9 @@ export function DynamicRecordDialog({
         const seedForm = (meta: ModalMetadata, rec: any) => {
             const initial: Record<string, any> = {}
             for (const field of meta.fields ?? []) {
-                initial[field.key] = resolvePath(rec, field.key) ?? field.defaultValue ?? ''
+                initial[field.key] = isPasswordField(field)
+                    ? ''
+                    : resolvePath(rec, field.key) ?? field.defaultValue ?? ''
             }
             setFormValues(initial)
         }
@@ -840,6 +888,7 @@ export function DynamicRecordDialog({
                     setFormValues(prev => {
                         const next = { ...prev }
                         for (const field of modalMeta?.fields ?? []) {
+                            if (isPasswordField(field)) continue
                             const v = resolvePath(rec, field.key)
                             if (v !== undefined) next[field.key] = v
                         }
@@ -897,7 +946,7 @@ export function DynamicRecordDialog({
             // Laravel-style: collect every issue from the shared validator
             // (required + rule strings / min/max / email…) on visible fields only.
             const visible = filterVisibleFields(modalMeta.fields, mode, formValues, attributeClasses)
-            let bag = validateValues(visible as ActionFieldDef[], formValues)
+            let bag = validateValues(requiredGateFields(visible, mode, formValues) as ActionFieldDef[], formValues)
             // Edit: a legacy value re-sent unchanged is not re-judged by a rule
             // added after it was written (same grandfathering as the kernel).
             if (mode === 'edit' && record) {
@@ -941,7 +990,10 @@ export function DynamicRecordDialog({
 
         // Empty reference pickers → null (not "" / nil-UUID) so nullable FK
         // columns accept them instead of raising a 23503 FK violation.
-        let payload = normalizeRefFieldsForSubmit(submittedValues, modalMeta.fields)
+        let payload = dropEmptyPasswords(
+            normalizeRefFieldsForSubmit(submittedValues, modalMeta.fields),
+            modalMeta.fields,
+        )
 
         if (
             isCreate &&
@@ -1081,7 +1133,7 @@ export function DynamicRecordDialog({
     const goNextStep = () => {
         const step = groups[clampedStep]
         const stepFields = step?.fields ?? []
-        const bag = validateValues(stepFields as ActionFieldDef[], formValues)
+        const bag = validateValues(requiredGateFields(stepFields, mode, formValues) as ActionFieldDef[], formValues)
         if (bagHasErrors(bag)) {
             const labels: Record<string, string> = {}
             for (const f of stepFields) labels[f.key] = localizeFieldLabel(f.label, t)
@@ -1346,7 +1398,7 @@ function FieldRow({ field, record, value, mode, onChange, error, locked }: Field
             ) : isEditReadonly ? (
                 <ReadonlyEditField field={field} value={value} />
             ) : (
-                <EditField field={field} value={value} onChange={onChange} record={record} invalid={!!error} />
+                <EditField field={field} value={value} onChange={onChange} record={record} invalid={!!error} error={error} />
             )}
 
             {error && mode !== 'view' && (
@@ -1361,8 +1413,15 @@ function FieldRow({ field, record, value, mode, onChange, error, locked }: Field
 // edits. Booleans render as a disabled switch to match their editable
 // counterpart; everything else renders the formatted display value in a disabled
 // text input.
+const noopChange = () => {}
+
 export function ReadonlyEditField({ field, value }: { field: FieldDef; value: any }) {
-    if (field.type === 'boolean' || typeof value === 'boolean') {
+    useFieldWidgetRegistryVersion()
+    const HostWidget = getFieldWidget(field.widget)
+    if (HostWidget) {
+        return <HostWidget field={field as unknown as ActionFieldDef} value={value} onChange={noopChange} disabled />
+    }
+    if (field.type === 'boolean' || field.type === 'checkbox' || typeof value === 'boolean') {
         return (
             <div className="flex items-center gap-2 py-1">
                 <Switch checked={!!value} disabled />
@@ -1580,7 +1639,7 @@ export function ViewValue({
         return <p className="text-sm py-1">{inlineLabel}</p>
     }
 
-    if (field.type === 'boolean' || typeof value === 'boolean') {
+    if (field.type === 'boolean' || field.type === 'checkbox' || typeof value === 'boolean') {
         return (
             <div className="flex items-center gap-2 py-1">
                 <Switch checked={!!value} disabled />
@@ -1989,7 +2048,7 @@ function JsonObjectViewValue({ value }: { value: Record<string, unknown> }) {
     )
 }
 
-export function EditField({ field, value, onChange, record, invalid }: {
+export function EditField({ field, value, onChange, record, invalid, error }: {
     field: FieldDef
     value: any
     onChange: (val: any) => void
@@ -1997,6 +2056,8 @@ export function EditField({ field, value, onChange, record, invalid }: {
     record?: any
     /** When true, paint the control with a destructive border (Laravel-style). */
     invalid?: boolean
+    /** Validation message, forwarded to a host-registered field widget. */
+    error?: string
 }) {
     const invalidCls = invalid
         ? 'border-destructive ring-1 ring-destructive/30 focus-visible:ring-destructive aria-invalid:border-destructive'
@@ -2005,6 +2066,22 @@ export function EditField({ field, value, onChange, record, invalid }: {
     const { t, i18n } = useTranslation()
     const editFieldImageUrl = useContext(ImageUrlContext)
     const dialogModel = useContext(RecordDialogModelContext)
+
+    // Host-registered widget (`widget: "<name>"`) wins over every built-in and
+    // type-based branch. Unregistered names fall through untouched.
+    useFieldWidgetRegistryVersion()
+    const HostWidget = getFieldWidget(field.widget)
+    if (HostWidget) {
+        return (
+            <HostWidget
+                field={field as unknown as ActionFieldDef}
+                value={value}
+                onChange={onChange}
+                error={error}
+                record={record}
+            />
+        )
+    }
 
     // Jsonb line-items columns (e.g. Transfer.items) are action-built documents:
     // editing the array field-by-field is out of scope. Render them READ-ONLY
@@ -2042,6 +2119,38 @@ export function EditField({ field, value, onChange, record, invalid }: {
                 </span>
             </div>
         )
+    }
+
+    // Checkbox: boolean like `boolean`, rendered as a checkbox with its label.
+    if (field.type === 'checkbox') {
+        return (
+            <div className="flex items-center gap-2 py-1">
+                <Checkbox
+                    checked={value === true || value === 'true'}
+                    onCheckedChange={(c: boolean | 'indeterminate') => onChange(c === true)}
+                    aria-invalid={invalid || undefined}
+                />
+            </div>
+        )
+    }
+
+    // Multiselect: array of ids/values. A `ref`/`searchEndpoint` resolves options
+    // remotely (same contract as `multiple`); otherwise the static `options`.
+    if (field.type === 'multiselect') {
+        return (
+            <DynamicMultiSelectField
+                field={field as ActionFieldDef}
+                value={value}
+                onChange={onChange}
+                staticOptions={field.options}
+            />
+        )
+    }
+
+    // File: generic uploader (POST to the host upload endpoint, stores the
+    // returned url/path). `image` / `widget: 'upload'` keep the image dropzone.
+    if (field.type === 'file') {
+        return <UploadField field={field as ActionFieldDef} value={value} onChange={onChange} />
     }
 
     if (field.type === 'textarea') {
@@ -2221,7 +2330,13 @@ export function EditField({ field, value, onChange, record, invalid }: {
         ? 'number'
         : field.type === 'email'
             ? 'email'
-            : 'text'
+            : field.type === 'password'
+                ? 'password'
+                : field.type === 'phone' || field.type === 'tel'
+                    ? 'tel'
+                    : field.type === 'time'
+                        ? 'time'
+                        : 'text'
 
     return <ScannableRecordInput field={field} value={value} onChange={onChange} inputType={inputType} invalid={invalid} className={invalidCls} />
 }
@@ -2270,6 +2385,7 @@ function ScannableRecordInput({
                 )
             }
             placeholder={field.placeholder}
+            autoComplete={inputType === 'password' ? 'new-password' : undefined}
             aria-invalid={invalid || undefined}
             className={className}
         />

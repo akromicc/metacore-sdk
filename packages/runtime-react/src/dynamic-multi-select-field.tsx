@@ -36,32 +36,57 @@ export interface DynamicMultiSelectFieldProps {
     /** Plain array of selected target ids. Absent/non-array value → treated as empty. */
     value: unknown
     onChange: (value: string[]) => void
+    /**
+     * Static options (DefineOptions served inline on the field). When the field
+     * has no `ref`/`searchEndpoint` and this list is non-empty, it is used as the
+     * option set and no request is made. Absent → remote resolution as before.
+     */
+    staticOptions?: { value: string; label: string; color?: string; icon?: string; image?: string }[]
 }
 
-export function DynamicMultiSelectField({ field, value, onChange }: DynamicMultiSelectFieldProps) {
+export function DynamicMultiSelectField({ field, value, onChange, staticOptions }: DynamicMultiSelectFieldProps) {
     const ref = getFieldRef(field)
     const [query, setQuery] = useState('')
-    const { options, loading, meta, error } = useOptionsResolver({
+    const useStatic = !ref && !field.searchEndpoint && !!staticOptions?.length
+    const remote = useOptionsResolver({
         modelKey: '',
         fieldKey: 'id',
         ref,
         endpoint: !ref && field.searchEndpoint ? field.searchEndpoint : undefined,
         limit: 200,
         optionFilter: getOptionFilter(field),
+        enabled: !useStatic,
     })
+    const staticResolved = useMemo<ResolvedOption[]>(
+        () =>
+            (staticOptions ?? []).map((o) => ({
+                id: o.value,
+                value: o.value,
+                label: o.label,
+                name: o.label,
+                color: o.color,
+                icon: o.icon,
+                image: o.image,
+            })),
+        [staticOptions],
+    )
+    const options = useStatic ? staticResolved : remote.options
+    const loading = useStatic ? false : remote.loading
+    const meta = useStatic ? ({ type: 'static', count: staticResolved.length } as const) : remote.meta
+    const error = useStatic ? null : remote.error
 
     const selected = useMemo(() => (Array.isArray(value) ? value.map(String) : []), [value])
     const endpoint = !ref && field.searchEndpoint ? field.searchEndpoint : undefined
     // Ask for the ids the loaded page does not cover — only once it is in.
     const pageSettled = !loading && (meta !== null || error !== null)
     const unresolved = pageSettled ? selected.filter((id) => !options.some((o) => String(o.id) === id)) : []
-    const { resolved } = useResolveOptionIds({ ref, endpoint, field: 'id', ids: unresolved, enabled: unresolved.length > 0 })
+    const { resolved } = useResolveOptionIds({ ref, endpoint, field: 'id', ids: unresolved, enabled: !useStatic && unresolved.length > 0 })
     const selectedItems = selected.map((id): ResolvedOption => {
         const loaded = options.find((o) => String(o.id) === id)
         if (loaded) return loaded
         const r = pageSettled ? resolved.get(id) : undefined
         if (r?.status === 'found') return r.option
-        const label = !r ? 'Cargando…' : r.status === 'missing' ? DELETED_RECORD_LABEL : id
+        const label = useStatic ? id : !r ? 'Cargando…' : r.status === 'missing' ? DELETED_RECORD_LABEL : id
         return { id, value: id, label, name: label }
     })
     const shown = useMemo(() => {
