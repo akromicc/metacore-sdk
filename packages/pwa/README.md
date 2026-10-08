@@ -147,6 +147,10 @@ Requisito: el `sw.js` no debe hacer `skipWaiting` al instalar, solo al mensaje `
 
 **Momento seguro** (por defecto; un `apply` nunca ocurre sin él): sin diálogo Radix abierto; sin campo enfocado con contenido ni campo en el que el usuario escribió (evento `input` de confianza, últimos 30 min) que aún tenga contenido (los campos precargados/autocompletados no cuentan); y pestaña oculta, o usuario inactivo ≥ 60 s. Se reevalúa cada 15 s mientras hay una actualización esperando.
 
+Un `<input type="file">` con archivos seleccionados cuenta como edición en curso (no seguro). Limitaciones del test por defecto: **no detecta subidas, peticiones `fetch`/XHR ni escrituras en curso** que no pasen por un campo con contenido, y el clic explícito en "Actualizar" **omite** el momento seguro (es decisión del usuario). Si tu host tiene subidas o formularios críticos, pasa tu propio `isSafeToApply` (por ejemplo, devolviendo `false` mientras haya una subida o mutación activa).
+
+**Garantía anti-bucle**: máximo UN intento de recarga por `acceptedTtlMs` (2 min) y por worker en espera. Se persiste `metacore_pwa_update_last_apply_attempt_at`; si tras recargar el worker sigue en espera (p. ej. un `sw.js` que ignora `SKIP_WAITING`) no se vuelve a aplicar de forma automática (ni por aceptación previa ni por `autoApplyAfterMs`): se limpia la aceptación y se vuelve al aviso. Solo un clic explícito en "Actualizar" puede reintentar. Cuando cambia el worker en espera (otro `scriptURL` o instancia) se reinician su antigüedad, el descarte y el intento.
+
 **Recarga**: una sola, solo tras `SKIP_WAITING` -> `controllerchange`, con fallback a 5 s. En modo `prompt` un `controllerchange` ajeno (otra pestaña) no recarga esta.
 
 Los estados de persistencia (`metacore_pwa_update_*` en `localStorage`) permiten que `autoApplyAfterMs` cuente desde la primera vez que se vio la actualización aunque el usuario recargue sin activarla. Si el storage no está disponible la política degrada a solo-sesión.

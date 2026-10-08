@@ -1,5 +1,6 @@
 import {
   decideUpdate,
+  isWithinTtl,
   resolveUpdatePolicy,
   type UpdatePolicy,
 } from './update-policy'
@@ -115,6 +116,7 @@ export function createUpdateController(
     since: `${prefix}_waiting_since`,
     dismissed: `${prefix}_dismissed_at`,
     accepted: `${prefix}_accepted_at`,
+    attempt: `${prefix}_last_apply_attempt_at`,
   }
 
   const read = (key: string): number | undefined => {
@@ -143,6 +145,10 @@ export function createUpdateController(
   let reloaded = false
   let evalTimer: ReturnType<typeof setInterval> | undefined
   let cleanups: Array<() => void> = []
+  let installingCleanup: (() => void) | undefined
+  let controllerChangeCleanup: (() => void) | undefined
+  // Identity of the waiting worker last seen by THIS instance (a new deploy replaces it).
+  let seenWaiting: { ref: unknown; scriptURL: string | undefined } | undefined
   const timeouts = new Set<ReturnType<typeof setTimeout>>()
 
   const patch = (p: Partial<UpdateSnapshot>) => {
@@ -186,12 +192,32 @@ export function createUpdateController(
     const hasWaiting = !!registration.waiting
     if (!hasWaiting) {
       // Nothing pending: a previous acceptance has been fulfilled.
+      seenWaiting = undefined
       write(K.since, undefined)
       write(K.accepted, undefined)
+      write(K.attempt, undefined)
       stopEvalTimer()
       patch({ updatePending: false })
       return
     }
+    if (snapshot.applying) return // reload in flight: never decide again
+    const waiting = registration.waiting as (ServiceWorker | null)
+    const identity = { ref: waiting, scriptURL: waiting?.scriptURL }
+    if (seenWaiting && (seenWaiting.ref !== identity.ref || seenWaiting.scriptURL !== identity.scriptURL)) {
+      // A different worker is waiting (e.g. v2 deployed over a waiting v1): it
+      // inherits neither v1's age, its dismissal nor its apply attempt.
+      write(K.since, undefined)
+      write(K.dismissed, undefined)
+      write(K.accepted, undefined)
+      write(K.attempt, undefined)
+    }
+    seenWaiting = identity
+    // Hard loop guard: at most ONE automatic apply attempt per acceptedTtlMs. If
+    // we already tried and a worker is STILL waiting, applying again would loop
+    // (sw.js ignoring SKIP_WAITING...). Forget the acceptance and go back to
+    // asking; only an explicit click on "Update" may retry.
+    const recentAttempt = isWithinTtl(read(K.attempt), now, policy.acceptedTtlMs)
+    if (recentAttempt) write(K.accepted, undefined)
     let waitingSince = read(K.since)
     if (waitingSince === undefined || waitingSince > now) {
       waitingSince = now
@@ -205,7 +231,7 @@ export function createUpdateController(
         dismissedAt: read(K.dismissed),
         acceptedAt: read(K.accepted),
         stale: snapshot.stale,
-        safe: isSafe(),
+        safe: !recentAttempt && isSafe(),
       },
       policy,
     )
@@ -224,12 +250,17 @@ export function createUpdateController(
     patch({ applying: true, updatePending: false })
     // Next deploy must notify again; remember the acceptance so a still-waiting
     // worker after the reload is applied without re-asking.
+    const at = deps.now()
     write(K.dismissed, undefined)
-    write(K.accepted, deps.now())
+    // Never renew a still-valid acceptance; always stamp the attempt (loop guard).
+    if (!isWithinTtl(read(K.accepted), at, policy.acceptedTtlMs)) write(K.accepted, at)
+    write(K.attempt, at)
 
     // ONE reload, and only once the new worker controls the page. Reloading
     // earlier leaves a blank page on mobile (old precache already cleaned).
+    controllerChangeCleanup?.()
     deps.container?.addEventListener('controllerchange', reloadOnce, { once: true })
+    controllerChangeCleanup = () => deps.container?.removeEventListener('controllerchange', reloadOnce)
     later(reloadOnce, fallbackMs)
 
     const waiting = registration?.waiting
@@ -277,15 +308,20 @@ export function createUpdateController(
   const onUpdateFound = () => {
     const installing = registration?.installing
     if (!installing) return
-    installing.addEventListener('statechange', () => {
+    installingCleanup?.()
+    const onState = () => {
       if (installing.state === 'installed') evaluate()
-    })
+    }
+    installing.addEventListener('statechange', onState)
+    installingCleanup = () => installing.removeEventListener('statechange', onState)
   }
 
   const controller: UpdateController = {
     attach(reg) {
       if (registration === reg) return
       registration?.removeEventListener('updatefound', onUpdateFound)
+      installingCleanup?.()
+      installingCleanup = undefined
       registration = reg
       reg.addEventListener('updatefound', onUpdateFound)
       evaluate()
@@ -327,6 +363,10 @@ export function createUpdateController(
       started = false
       stopEvalTimer()
       registration?.removeEventListener('updatefound', onUpdateFound)
+      installingCleanup?.()
+      installingCleanup = undefined
+      controllerChangeCleanup?.()
+      controllerChangeCleanup = undefined
       cleanups.forEach((fn) => fn())
       cleanups = []
       timeouts.forEach((t) => clearTimeout(t))

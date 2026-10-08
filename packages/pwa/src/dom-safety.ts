@@ -5,7 +5,8 @@ import { hasOpenModal } from './use-modal-open'
  *  - no modal/dialog is open (a form is likely in there);
  *  - the user is not mid-input: no focused field with content, and no field the
  *    user typed into (trusted `input` event) within the last `EDIT_WINDOW_MS`
- *    that still has content. Prefilled/autofilled fields don't count;
+ *    that still has content (a file input with selected files counts).
+ *    Prefilled/autofilled fields don't count;
  *  - the tab is hidden, OR the user has been idle for `minIdleMs` (default 60 s)
  *    so we don't yank the page from under someone who is reading/scrolling.
  * Hosts with other needs pass `isSafeToApply` to replace this.
@@ -33,11 +34,13 @@ export function isSafeSnapshot(s: SafetySnapshot, opts: SafetyOptions = {}): boo
 }
 
 const NON_TEXT_INPUTS = new Set([
-  'hidden', 'checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'range', 'color', 'image',
+  'hidden', 'checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'image',
 ])
 
 function hasContent(el: Element): boolean {
   if (typeof HTMLInputElement !== 'undefined' && el instanceof HTMLInputElement) {
+    // A <input type=file> with selected files is work in progress too.
+    if (el.type === 'file') return (el.files?.length ?? 0) > 0
     return !NON_TEXT_INPUTS.has(el.type) && el.value.trim().length > 0
   }
   if (typeof HTMLTextAreaElement !== 'undefined' && el instanceof HTMLTextAreaElement) {
