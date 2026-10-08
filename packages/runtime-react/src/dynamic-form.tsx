@@ -40,6 +40,7 @@ import { UploadField } from './upload-field'
 import { IconPickerField } from './icon-picker-field'
 import { ColorPickerField } from './color-picker-field'
 
+import { getFieldWidget, useFieldWidgetRegistryVersion } from './field-widget-registry'
 export { buildZodSchema, resolveWidget }
 export { DynamicLineItems } from './dynamic-line-items'
 export { DynamicSelectField } from './dynamic-select-field'
@@ -388,6 +389,7 @@ function FieldRow({ field, value, onChange, values, error, initialValues }: Fiel
                 initialValues={initialValues}
                 values={values}
                 effectiveOptions={effectiveOptions}
+                error={error}
             />
             {error && <span className="text-red-500 text-sm" role="alert">{error}</span>}
         </div>
@@ -427,7 +429,15 @@ function FieldRenderer({
     onChange,
     initialValues,
     effectiveOptions,
-}: FieldRendererProps & { effectiveOptions?: import('./types').OptionDef[] }) {
+    error,
+}: FieldRendererProps & { effectiveOptions?: import('./types').OptionDef[]; error?: string }) {
+    // Host-registered widget (`widget: "<name>"`) wins over every built-in and
+    // type-based branch. Unregistered names fall through untouched.
+    useFieldWidgetRegistryVersion()
+    const HostWidget = getFieldWidget(field.widget)
+    if (HostWidget) {
+        return <HostWidget field={field} value={value} onChange={onChange} error={error} record={initialValues} />
+    }
     // Repeatable line-items group → render the row grid. Its value is an array
     // of row objects rather than a scalar.
     if (isLineItemsField(field)) {
