@@ -10,6 +10,9 @@ import {
 } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { toast } from 'sonner'
+import { useServiceWorkerUpdate } from './use-service-worker-update'
+import type { VersionCheck } from './update-controller'
+import type { UpdatePolicy } from './update-policy'
 import { PushNotificationService, type PushApiClient, type PushServiceOptions } from './push-service'
 
 export interface PWAContextValue {
@@ -71,8 +74,30 @@ export interface PWAProviderProps {
   pushOptions?: PushServiceOptions
   /** Override user-facing toast messages. */
   messages?: PWAProviderMessages
-  /** Interval in ms between SW update checks. Default: 1 hour. Set to 0 to disable. */
+  /** Interval in ms between SW update checks. Default: 1 hour (5 min when `updateStrategy="prompt"`). Set to 0 to disable. */
   updateCheckIntervalMs?: number
+  /**
+   * How a waiting service worker is handled.
+   *  - `'auto'` (default, unchanged): the provider reloads on every
+   *    `controllerchange` (hosts whose sw.js does skipWaiting + clientsClaim).
+   *  - `'prompt'`: shared update policy. Nothing reloads until the user accepts
+   *    (`updateApp`) or, if configured, `autoApplyAfterMs` /
+   *    `staleAutoApplyAfterMs` elapse at a safe moment (no open modal, no
+   *    half-filled form, tab hidden or idle). Pair with `<PWAUpdatePrompt />`
+   *    and a sw.js that does NOT skipWaiting on install (only on the
+   *    `SKIP_WAITING` message, as in the packaged template).
+   */
+  updateStrategy?: 'auto' | 'prompt'
+  /** Prompt strategy: auto-apply after the update has waited this long (safe moments only). Default: never. */
+  autoApplyAfterMs?: number
+  /** Prompt strategy: like `autoApplyAfterMs` once `versionCheck` found the client outdated. Default: never. */
+  staleAutoApplyAfterMs?: number
+  /** Prompt strategy: how long a dismissal hides the prompt. Default 1 h. */
+  dismissTtlMs?: UpdatePolicy['dismissTtlMs']
+  /** Prompt strategy: replaces the default "safe to reload" test. */
+  isSafeToApply?: () => boolean
+  /** Prompt strategy: compare the embedded build version with the server's. */
+  versionCheck?: VersionCheck
   /**
    * Automatically create the push subscription once notification permission is
    * granted (default: true). Having permission is NOT enough — without a
@@ -95,11 +120,20 @@ export function PWAProvider({
   api,
   pushOptions,
   messages,
-  updateCheckIntervalMs = 60 * 60 * 1000,
+  updateCheckIntervalMs,
+  updateStrategy = 'auto',
+  autoApplyAfterMs,
+  staleAutoApplyAfterMs,
+  dismissTtlMs,
+  isSafeToApply,
+  versionCheck,
   autoSubscribeOnGranted = true,
   onRegistered,
   onRegisterError,
 }: PWAProviderProps) {
+  const promptMode = updateStrategy === 'prompt'
+  // Legacy cadence: 1 h. The policy machine defaults to 5 min (its own default).
+  const legacyIntervalMs = updateCheckIntervalMs ?? 60 * 60 * 1000
   const msgs = useMemo(() => ({ ...DEFAULT_MESSAGES, ...messages }), [messages])
 
   const [isOnline, setIsOnline] = useState(
@@ -115,16 +149,26 @@ export function PWAProvider({
     pushServiceRef.current = new PushNotificationService(api, pushOptions)
   }
 
+  const policyUpdate = useServiceWorkerUpdate({
+    enabled: promptMode,
+    checkIntervalMs: updateCheckIntervalMs,
+    autoApplyAfterMs,
+    staleAutoApplyAfterMs,
+    dismissTtlMs,
+    isSafeToApply,
+    versionCheck,
+  })
+
   const {
-    needRefresh: [needRefresh, setNeedRefresh],
+    needRefresh: [legacyNeedRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegistered(registration) {
       onRegistered?.(registration)
-      if (registration && updateCheckIntervalMs > 0) {
+      if (!promptMode && registration && legacyIntervalMs > 0) {
         setInterval(() => {
           registration.update()
-        }, updateCheckIntervalMs)
+        }, legacyIntervalMs)
       }
     },
     onRegisterError(error) {
@@ -255,6 +299,9 @@ export function PWAProvider({
   }, [msgs])
 
   useEffect(() => {
+    // Prompt strategy: the reload is owned by the update policy (single reload
+    // after OUR SKIP_WAITING), never by a bare controllerchange.
+    if (promptMode) return
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
 
     let refreshing = false
@@ -269,7 +316,7 @@ export function PWAProvider({
     return () => {
       navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange)
     }
-  }, [])
+  }, [promptMode])
 
   // Independent SW update detection. A host may alias `virtual:pwa-register/react`
   // to a no-op stub (e.g. ops's module-federation setup), in which case
@@ -283,7 +330,7 @@ export function PWAProvider({
   // controllerchange → the reload effect above swaps to the new build by itself.
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
-    if (updateCheckIntervalMs <= 0) return
+    if (promptMode || legacyIntervalMs <= 0) return
 
     let reg: ServiceWorkerRegistration | undefined
     let interval: ReturnType<typeof setInterval> | undefined
@@ -295,7 +342,7 @@ export function PWAProvider({
       .then((registration) => {
         reg = registration
         check()
-        interval = setInterval(check, updateCheckIntervalMs)
+        interval = setInterval(check, legacyIntervalMs)
       })
       .catch(() => {})
 
@@ -314,7 +361,7 @@ export function PWAProvider({
       }
       window.removeEventListener('focus', check)
     }
-  }, [updateCheckIntervalMs])
+  }, [promptMode, legacyIntervalMs])
 
   const installApp = async (): Promise<boolean> => {
     if (!deferredPrompt) {
@@ -337,6 +384,10 @@ export function PWAProvider({
   }
 
   const updateApp = () => {
+    if (promptMode) {
+      policyUpdate.applyNow()
+      return
+    }
     // For autoUpdate SWs (skipWaiting + clientsClaim on install) there is no
     // "waiting" worker at click-time — the new SW is already active and
     // serving the updated assets.  updateServiceWorker(true) posts a
@@ -385,12 +436,12 @@ export function PWAProvider({
   const value: PWAContextValue = {
     isOnline,
     isInstallable,
-    needRefresh,
+    needRefresh: promptMode ? policyUpdate.updatePending : legacyNeedRefresh,
     isPushSupported,
     isPushSubscribed,
     installApp,
     updateApp,
-    closeUpdatePrompt: () => setNeedRefresh(false),
+    closeUpdatePrompt: () => (promptMode ? policyUpdate.dismiss() : setNeedRefresh(false)),
     subscribeToPush,
     unsubscribeFromPush,
     testPushNotification,
