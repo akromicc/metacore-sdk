@@ -29,6 +29,13 @@ export interface IconPickerFieldProps {
     field: ActionFieldDef
     value: any
     onChange: (v: any) => void
+    /**
+     * Icon-only mode: hide the "Imagen" tab so the field can only store a
+     * lucide icon name. Also read from `field.iconOnly` / `field.icon_only`
+     * (metadata). An existing url/path value is preserved untouched until the
+     * user picks an icon or clears it (shown as a non-editable current value).
+     */
+    iconOnly?: boolean
 }
 
 /** Icons rendered per "page" — grows as the user scrolls to the bottom. Keeps
@@ -42,15 +49,19 @@ export function looksLikeImageValue(value: unknown): boolean {
     return typeof value === 'string' && value !== '' && /[/.]/.test(value)
 }
 
-export function IconPickerField({ field, value, onChange }: IconPickerFieldProps) {
+export function IconPickerField({ field, value, onChange, iconOnly }: IconPickerFieldProps) {
+    const onlyIcon = iconOnly ?? field.iconOnly ?? field.icon_only ?? false
     const [mode, setMode] = useState<'icon' | 'image'>(() =>
-        looksLikeImageValue(value) ? 'image' : 'icon',
+        !onlyIcon && looksLikeImageValue(value) ? 'image' : 'icon',
     )
+    // iconOnly + a stored url/path (written before the restriction): keep it,
+    // render it as a read-only current value the user can clear or replace.
+    const legacyImageValue = onlyIcon && looksLikeImageValue(value)
     const [open, setOpen] = useState(false)
     const [query, setQuery] = useState('')
     const [limit, setLimit] = useState(PAGE)
 
-    const selected = mode === 'icon' ? resolveLucideIconName(value) : null
+    const selected = mode === 'icon' && !legacyImageValue ? resolveLucideIconName(value) : null
 
     // Full match list (names only) — filtered by query, not yet capped.
     const matches = useMemo(() => {
@@ -70,6 +81,7 @@ export function IconPickerField({ field, value, onChange }: IconPickerFieldProps
 
     return (
         <div className="flex flex-col gap-2">
+            {!onlyIcon && (
             <div className="flex gap-1" role="tablist" aria-label="Tipo de ícono">
                 <Button
                     type="button"
@@ -92,7 +104,18 @@ export function IconPickerField({ field, value, onChange }: IconPickerFieldProps
                     Imagen
                 </Button>
             </div>
-            {mode === 'image' ? (
+            )}
+            {legacyImageValue && (
+                <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm" data-testid="icon-legacy-value">
+                    <span className="min-w-0 truncate text-muted-foreground" title={String(value)}>
+                        Valor actual: {String(value)}
+                    </span>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => onChange('')}>
+                        Quitar
+                    </Button>
+                </div>
+            )}
+            {mode === 'image' && !onlyIcon ? (
                 <UploadField field={field} value={value} onChange={onChange} />
             ) : (
                 <Popover

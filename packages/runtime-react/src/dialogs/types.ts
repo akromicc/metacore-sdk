@@ -30,6 +30,11 @@ export interface ModelSchema {
     title?: string
     createTitle?: string
     editTitle?: string
+    createDescription?: string
+    editDescription?: string
+    viewDescription?: string
+    createSubmitLabel?: string
+    editSubmitLabel?: string
     fields?: Array<{
         key: string
         label: string

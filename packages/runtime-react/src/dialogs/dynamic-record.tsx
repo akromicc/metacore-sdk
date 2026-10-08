@@ -181,6 +181,10 @@ export interface FieldDef {
      * `groupFieldsBySection`.
      */
     section?: string
+    /** `icon` widget: only lucide names (no "Imagen" tab). */
+    iconOnly?: boolean
+    /** snake_case alias for `iconOnly`. */
+    icon_only?: boolean
 }
 
 // Permissive shape: the wire payload may omit some fields (e.g. `title` is
@@ -197,6 +201,21 @@ interface ModalMetadata {
     titleKey?: string
     createTitle?: string
     editTitle?: string
+    /**
+     * Optional per-model dialog texts. When present they replace the generic
+     * description / submit label of the mode; absent → the built-in texts.
+     * snake_case aliases accepted (wire format).
+     */
+    createDescription?: string
+    editDescription?: string
+    viewDescription?: string
+    createSubmitLabel?: string
+    editSubmitLabel?: string
+    create_description?: string
+    edit_description?: string
+    view_description?: string
+    create_submit_label?: string
+    edit_submit_label?: string
     fields?: FieldDef[]
     /**
      * Declarative form layout (kernel PR #230): groups the fields into named
@@ -499,6 +518,33 @@ function formatDisplayValue(rawValue: any, field: FieldDef): string {
     if (typeof value === 'object') return JSON.stringify(value)
 
     return String(value)
+}
+
+// modeTexts resolves the per-model description / submit label for a mode,
+// falling back to the generic MODE_CONFIG strings when metadata omits them.
+function modeTexts(
+    meta: ModalMetadata | null | undefined,
+    mode: 'create' | 'edit' | 'view',
+    base: { description: string; submitLabel: string },
+): { description: string; submitLabel: string } {
+    const pick = (...v: Array<string | undefined>) => v.find((x) => typeof x === 'string' && x.trim() !== '')
+    if (!meta) return base
+    if (mode === 'create') {
+        return {
+            description: pick(meta.createDescription, meta.create_description) ?? base.description,
+            submitLabel: pick(meta.createSubmitLabel, meta.create_submit_label) ?? base.submitLabel,
+        }
+    }
+    if (mode === 'edit') {
+        return {
+            description: pick(meta.editDescription, meta.edit_description) ?? base.description,
+            submitLabel: pick(meta.editSubmitLabel, meta.edit_submit_label) ?? base.submitLabel,
+        }
+    }
+    return {
+        description: pick(meta.viewDescription, meta.view_description) ?? base.description,
+        submitLabel: base.submitLabel,
+    }
 }
 
 const MODE_CONFIG = {
@@ -1086,6 +1132,8 @@ export function DynamicRecordDialog({
             ? 'Editar registro'
             : 'Ver registro'
 
+    const texts = modeTexts(modalMeta, mode, config)
+
     const visibleFields = filterVisibleFields(modalMeta?.fields, mode, formValues, attributeClasses)
 
     // Declarative form layout: group the (already visibility-filtered) fields by
@@ -1152,7 +1200,7 @@ export function DynamicRecordDialog({
             <DialogContent className="sm:max-w-2xl max-h-[90dvh] flex flex-col p-0 gap-0 overflow-hidden" style={{ maxHeight: '90dvh' }}>
                 <DialogHeader className="p-6 pb-4 border-b shrink-0">
                     <DialogTitle>{title}</DialogTitle>
-                    <DialogDescription>{config.description}</DialogDescription>
+                    <DialogDescription>{texts.description}</DialogDescription>
                 </DialogHeader>
 
                 <div className="flex-1 overflow-y-auto p-6">
@@ -1332,7 +1380,7 @@ export function DynamicRecordDialog({
                                 disabled={saving || loading}
                             >
                                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                {saving ? config.submittingLabel : config.submitLabel}
+                                {saving ? config.submittingLabel : texts.submitLabel}
                             </Button>
                         )}
                     </div>
