@@ -537,7 +537,7 @@ export const FONT_AWESOME_ALIASES: Readonly<Record<string, string>> = {
     'paw': 'paw-print',
     'dog': 'dog',
     'cat': 'cat',
-    'horse': 'rabbit',
+    'horse': 'paw-print',
     'bug': 'bug',
     'smile': 'smile',
     'frown': 'frown',

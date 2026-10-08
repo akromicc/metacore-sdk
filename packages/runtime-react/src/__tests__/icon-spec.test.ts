@@ -78,6 +78,19 @@ describe('parseIconSpec', () => {
     })
 
     it.each([
+        ['letras', 'a'.repeat(100_000)],
+        ['fa- encadenado', 'fa-a'.repeat(25_000)],
+        ['estilo repetido', 'fas '.repeat(25_000)],
+        ['ruta larga', '/' + 'a'.repeat(100_000)],
+        ['data:image enorme', 'data:image/png;base64,' + 'A'.repeat(100_000)],
+        ['emoji ZWJ repetido', '👨\u200d⚕️'.repeat(10_000)],
+    ])('entrada de 100k caracteres (%s) responde rápido y sin romper', (_n, raw) => {
+        const t0 = Date.now()
+        expect(() => parseIconSpec(raw)).not.toThrow()
+        expect(Date.now() - t0).toBeLessThan(500) // sin backtracking catastrófico
+    })
+
+    it.each([
         'javascript:alert(1)',
         'JavaScript:alert(1)',
         'vbscript:x',
