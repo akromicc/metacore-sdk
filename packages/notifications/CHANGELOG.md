@@ -1,5 +1,11 @@
 # @asteby/metacore-notifications
 
+## 38.2.0
+
+### Minor Changes
+
+- 8422cad: El toast unificado respeta los saltos de línea del cuerpo (`white-space: pre-line`) y amplía el recorte a 6 líneas solo cuando el cuerpo es multilínea; los cuerpos de una línea no cambian.
+
 ## 38.1.0
 
 ### Minor Changes
