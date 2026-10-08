@@ -13,22 +13,28 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** Strip dangerous tags/attrs; keep a tiny allowlist for emphasis. */
+/**
+ * Strip dangerous tags/attrs; keep a tiny allowlist for emphasis.
+ *
+ * Single pass over every `<`: a well-formed allowlisted tag is re-emitted
+ * WITHOUT attributes, any other well-formed tag is dropped, and a `<` that
+ * does not open a well-formed tag (`<b/onclick=…>`, `<scr<script>`, `<b <img`)
+ * is escaped to `&lt;`. So the output never contains a raw `<` except in the
+ * rebuilt tags. Still not a substitute for a DOM-based sanitizer: for
+ * user-authored content render the body as plain text (`richText={false}`).
+ */
 export function sanitizeNotificationHtml(input: string): string {
-  let s = String(input ?? '')
-  // Drop obviously dangerous blocks first.
-  s = s.replace(/<\/?(script|style|iframe|object|embed|link|meta|img|svg|form|input|button)[^>]*>/gi, '')
-  s = s.replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-  s = s.replace(/\s(href|src|xlink:href)\s*=\s*("|')\s*javascript:[^"']*\2/gi, '')
-  s = s.replace(/<\/?([a-z0-9]+)(\s[^>]*)?>/gi, (match, tag: string) => {
-    const t = tag.toLowerCase()
-    if (!ALLOWED_TAGS.has(t)) return ''
-    if (t === 'br') return '<br/>'
-    if (match.startsWith('</')) return `</${t}>`
-    // No attributes on allowlisted tags (keeps XSS surface tiny).
-    return `<${t}>`
-  })
-  return s
+  const s = String(input ?? '').replace(/<!--[\s\S]*?-->/g, '')
+  return s.replace(
+    /<(\/?)([a-z][a-z0-9]*)(?=[\s/>])[^>]*>|</gi,
+    (match, slash: string | undefined, tag: string | undefined) => {
+      if (!tag) return '&lt;'
+      const t = tag.toLowerCase()
+      if (!ALLOWED_TAGS.has(t)) return ''
+      if (t === 'br') return '<br/>'
+      return slash ? `</${t}>` : `<${t}>`
+    },
+  )
 }
 
 /**

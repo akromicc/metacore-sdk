@@ -21,6 +21,11 @@ export type ShowNotificationToastOptions = {
   addonKey?: string
   duration?: number
   onClick?: () => void
+  /**
+   * Render the body through the HTML sanitizer (default true). `false` paints
+   * it as plain text — use it for user-authored content.
+   */
+  richText?: boolean
   /** Sonner-compatible primary action (e.g. Recargar / Actualizar). */
   action?: ToastActionButton | ReactNode
   /** Sonner-compatible secondary/cancel action. */
@@ -150,7 +155,8 @@ export function showNotificationToast(opts: ShowNotificationToastOptions): strin
   })
   const apartado = (opts.apartado || moduleLabel || '').trim()
   const body = (opts.body || '').trim()
-  const bodyHtml = formatNotificationBodyHtml(body)
+  const plainBody = opts.richText === false
+  const bodyHtml = plainBody ? '' : formatNotificationBodyHtml(body)
   const hasActions = Boolean(opts.action || opts.cancel)
   // Title-only: vertically center with the icon. Chip/body/actions keep items-start.
   const titleOnly = !apartado && !body && !hasActions
@@ -194,7 +200,11 @@ export function showNotificationToast(opts: ShowNotificationToastOptions): strin
               </span>
             ) : null}
             <span className='block text-sm font-semibold text-foreground'>{opts.title}</span>
-            {bodyHtml ? (
+            {plainBody && body ? (
+              <span className='mt-0.5 block text-xs text-muted-foreground line-clamp-2'>
+                {body}
+              </span>
+            ) : bodyHtml ? (
               <span
                 className='mt-0.5 block text-xs text-muted-foreground line-clamp-2 [&_strong]:font-semibold [&_strong]:text-foreground/85 [&_b]:font-semibold [&_b]:text-foreground/85 [&_em]:italic [&_i]:italic [&_u]:underline [&_mark]:rounded-sm [&_mark]:bg-amber-500/20 [&_mark]:px-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[10px]'
                 dangerouslySetInnerHTML={{ __html: bodyHtml }}
