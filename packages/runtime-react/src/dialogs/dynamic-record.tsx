@@ -71,7 +71,7 @@ import { FieldCell } from '../field-grid'
 import { isNilUuid, normalizeNilUuid } from '../nil-uuid'
 import { normalizeRefFieldsForSubmit } from './normalize-submit'
 import { validateValues, bagHasErrors, exemptUnchangedRuleIssues } from '../validator'
-import { DynamicIcon, isLucideIconName } from '../dynamic-icon'
+import { DynamicIcon, Icon, isLucideIconName } from '../dynamic-icon'
 import { IconPickerField } from '../icon-picker-field'
 import { humanizeToken, localizeFieldLabel } from '../dynamic-columns-helpers'
 import { formatDateCell } from '../dynamic-columns'
@@ -1687,6 +1687,22 @@ export function ViewValue({
             </div>
         ) : (
             <p className="text-sm py-1 text-muted-foreground">Sin imagen</p>
+        )
+    }
+
+    // Explicit `type: 'icon'`: any stored icon format via the universal resolver.
+    if (renderAs === 'icon') {
+        const empty = <p className="text-sm py-1 text-muted-foreground">-</p>
+        if (!value) return empty
+        return (
+            <div className="py-1">
+                <Icon
+                    name={value}
+                    className="h-6 w-6"
+                    fallback={empty}
+                    resolveImageSrc={(src) => (/^(?:data:|https?:)/i.test(src) ? src : getImageUrl(src))}
+                />
+            </div>
         )
     }
 

@@ -2,12 +2,28 @@
 // set into the shared chunk. It draws through the shared glyph registry of
 // @asteby/metacore-ui: a glyph seen before renders in the first frame, and an
 // unseen one holds its box until it loads, so the label next to it stays put.
+import { useState, type ReactNode } from 'react'
 import dynamicIconImports from 'lucide-react/dynamicIconImports'
 import { Glyph } from '@asteby/metacore-ui/icons'
+import { resolveIconSpec } from './icon-resolvers'
 
 export interface DynamicIconProps {
     name: string
     className?: string
+}
+
+export interface IconProps {
+    /** Any icon value: Lucide name, FontAwesome classes, emoji, image URL... */
+    name: unknown
+    className?: string
+    /** Accessible name. Without it the icon is decorative (aria-hidden). */
+    label?: string
+    /** Drawn when the value cannot be interpreted. Default: nothing. */
+    fallback?: ReactNode
+    /** Maps an image `src` before it reaches <img> (e.g. host `getImageUrl`). */
+    resolveImageSrc?: (src: string) => string
+    /** Render image sources (default true). DynamicIcon turns it off. */
+    images?: boolean
 }
 
 type IconName = keyof typeof dynamicIconImports
@@ -35,10 +51,59 @@ function loaderFor(pascal: string) {
     )
 }
 
+function IconImage({ src, className, label }: { src: string; className?: string; label?: string }) {
+    const [failed, setFailed] = useState<string | null>(null)
+    if (failed === src) return null
+    return (
+        <img
+            src={src}
+            alt={label ?? ''}
+            loading="lazy"
+            decoding="async"
+            className={className}
+            onError={() => setFailed(src)}
+        />
+    )
+}
+
+// Icon — renders any icon value the SDK can interpret (see parseIconSpec and
+// registerIconResolver): Lucide glyph, emoji, image or a host-rendered node.
+// A value nobody understands renders `fallback` (default nothing), never the
+// raw text. Decorative (aria-hidden) unless `label` is given.
+export function Icon({ name, className, label, fallback = null, resolveImageSrc, images = true }: IconProps) {
+    const spec = resolveIconSpec(name)
+    const a11y = label ? ({ role: 'img', 'aria-label': label } as const) : ({ 'aria-hidden': true } as const)
+    switch (spec.kind) {
+        case 'lucide':
+            return <Glyph name={spec.name} className={className} {...a11y} />
+        case 'emoji':
+            return (
+                <span className={className} {...a11y}>
+                    {spec.value}
+                </span>
+            )
+        case 'image':
+            if (!images) return <>{fallback}</>
+            return (
+                <IconImage
+                    src={resolveImageSrc ? resolveImageSrc(spec.src) : spec.src}
+                    className={className}
+                    label={label}
+                />
+            )
+        case 'node':
+            return <>{spec.node}</>
+        default:
+            return <>{fallback}</>
+    }
+}
+
+// DynamicIcon keeps its { name, className } contract: Lucide names resolve
+// exactly as before; FontAwesome classes, emoji and host resolvers now work
+// too. Image paths still draw nothing here (icon slots in menus/buttons never
+// showed <img>); use <Icon> or a `type: 'icon'` column for images.
 export function DynamicIcon({ name, className }: DynamicIconProps) {
-    const resolved = resolveLucideIconName(name)
-    if (!resolved) return null
-    return <Glyph name={resolved} className={className} />
+    return <Icon name={name} className={className} images={false} />
 }
 
 // resolveLucideIconName — canonical PascalCase lucide name for a value that is

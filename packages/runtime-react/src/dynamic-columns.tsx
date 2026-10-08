@@ -49,7 +49,7 @@ import {
 } from './display-value'
 import { MediaValue } from './rich-url'
 import { OptionsContext } from './options-context'
-import { DynamicIcon, isLucideIconName } from './dynamic-icon'
+import { DynamicIcon, Icon, isLucideIconName } from './dynamic-icon'
 import { CollectionCell } from './collection-cell'
 import { isNilUuid, normalizeNilUuid } from './nil-uuid'
 import { useOptionsResolver } from './use-options-resolver'
@@ -1480,6 +1480,27 @@ export function makeDefaultGetDynamicColumns(
                                     ? resolveImageSrc(col, String(imageValue), apiBaseUrl, normalizeImagePath)
                                     : imageValue
                             return <ImageCell value={imageSrc} getImageUrl={getImageUrl} />
+                        }
+
+                        case 'icon': {
+                            // Explicit `type: 'icon'` only: any stored icon format
+                            // (Lucide, FontAwesome classes, emoji, image URL).
+                            // Uninterpretable values show the dash, never raw text.
+                            if (!value) return <EmptyCell />
+                            return (
+                                <Icon
+                                    name={value}
+                                    className="h-5 w-5 text-foreground/80"
+                                    fallback={<EmptyCell />}
+                                    resolveImageSrc={(src) =>
+                                        /^(?:data:|https?:)/i.test(src)
+                                            ? src
+                                            : getImageUrl(
+                                                  resolveImageSrc(col, src, apiBaseUrl, normalizeImagePath),
+                                              )
+                                    }
+                                />
+                            )
                         }
 
                         case 'image_stack': {
