@@ -8,10 +8,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { I18nextProvider } from 'react-i18next'
 import i18next from 'i18next'
 
-import { DynamicRecordDialog, dropEmptyPasswords, filterVisibleFields } from '../dialogs/dynamic-record'
+import { DynamicRecordDialog, dropEmptyPasswords, filterVisibleFields, stripHiddenFieldValues } from '../dialogs/dynamic-record'
 import { ApiProvider } from '../api-context'
+import { toast } from 'sonner'
 
-afterEach(cleanup)
+afterEach(() => {
+    cleanup()
+    vi.mocked(toast.error).mockClear()
+})
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
@@ -158,5 +162,60 @@ describe('DynamicRecordDialog field types', () => {
             ] as never[],
         )
         expect(out).toEqual({ q: 'x', name: '' })
+    })
+
+    it('edit: an empty required password does not block saving and is not sent', async () => {
+        const onUpdate = vi.fn(async () => undefined)
+        renderDialog({
+            mode: 'edit',
+            recordId: '1',
+            onUpdate,
+            schema: {
+                title: 'Clínica',
+                fields: [
+                    { key: 'name', label: 'Nombre', type: 'text' },
+                    { key: 'secret', label: 'Clave', type: 'password', required: true },
+                ],
+            },
+            initialRecord: { id: 1, name: 'Clínica' },
+        })
+        await waitFor(() => expect(inputOf('Clave').type).toBe('password'))
+        fireEvent.click(screen.getByRole('button', { name: /Guardar|Actualizar/ }))
+        await waitFor(() => expect(onUpdate).toHaveBeenCalled())
+        const payload = (onUpdate.mock.calls[0] as unknown[])[1] as Record<string, unknown>
+        expect('secret' in payload).toBe(false)
+        expect(toast.error).not.toHaveBeenCalled()
+    })
+
+    it('create: a required password is still mandatory', async () => {
+        const onCreate = vi.fn(async () => undefined)
+        renderDialog({
+            mode: 'create',
+            onCreate,
+            schema: {
+                title: 'Clínica',
+                fields: [
+                    { key: 'name', label: 'Nombre', type: 'text' },
+                    { key: 'secret', label: 'Clave', type: 'password', required: true },
+                ],
+            },
+        })
+        await waitFor(() => expect(inputOf('Clave').type).toBe('password'))
+        fireEvent.click(screen.getByRole('button', { name: 'Crear' }))
+        await waitFor(() => expect(toast.error).toHaveBeenCalled())
+        expect(onCreate).not.toHaveBeenCalled()
+    })
+
+    it('hidden + visible_when: current behaviour is always stripped; plain hidden passes through', () => {
+        const flds = [
+            { key: 'kind', label: 'K', type: 'text' },
+            { key: 'h_when', label: 'H', type: 'hidden', visible_when: { field: 'kind', equals: 'a' } },
+            { key: 'h_plain', label: 'P', type: 'hidden' },
+        ] as never[]
+        for (const kind of ['a', 'b']) {
+            const out = stripHiddenFieldValues({ kind, h_when: 'x', h_plain: 'y' }, flds, 'create')
+            expect('h_when' in out).toBe(false) // even when the predicate is true
+            expect(out.h_plain).toBe('y')
+        }
     })
 })

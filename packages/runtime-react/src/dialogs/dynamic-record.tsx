@@ -589,6 +589,11 @@ export function filterVisibleFields(
 // visible fields — hidden fields are dropped from BOTH the render/required-gate
 // AND the submitted values. Keys with no matching declared field, or whose
 // field carries no `visible_when`, always pass through (retrocompat).
+// NOTE: a `type:'hidden'` field is never in the visible set, so with a
+// `visible_when` it is ALWAYS stripped (even when the predicate is true);
+// without `visible_when` it passes through with its default. Pinned by tests.
+// TODO(deuda): hay dos resolvers de campos (EditField de este diálogo y
+// resolveWidget de dynamic-form); converger en uno solo.
 export function stripHiddenFieldValues(
     values: Record<string, any>,
     fields: FieldDef[] | undefined,
@@ -621,6 +626,18 @@ export function dropEmptyPasswords(
         if (isPasswordField(f) && (out[f.key] === '' || out[f.key] == null)) delete out[f.key]
     }
     return out
+}
+
+// requiredGateFields leaves out, on edit, the password fields left empty: an
+// empty password on edit means "keep the current one" (it is not submitted), so
+// a `required` password must not block saving. On create it stays required.
+function requiredGateFields(
+    fields: FieldDef[],
+    mode: 'view' | 'edit' | 'create',
+    values: Record<string, any>,
+): FieldDef[] {
+    if (mode !== 'edit') return fields
+    return fields.filter(f => !(isPasswordField(f) && (values[f.key] === '' || values[f.key] == null)))
 }
 
 function applyEnsureFields(meta: ModalMetadata | null | undefined, ensureFields?: FieldDef[]): ModalMetadata | null {
@@ -928,7 +945,7 @@ export function DynamicRecordDialog({
             // Laravel-style: collect every issue from the shared validator
             // (required + rule strings / min/max / email…) on visible fields only.
             const visible = filterVisibleFields(modalMeta.fields, mode, formValues, attributeClasses)
-            let bag = validateValues(visible as ActionFieldDef[], formValues)
+            let bag = validateValues(requiredGateFields(visible, mode, formValues) as ActionFieldDef[], formValues)
             // Edit: a legacy value re-sent unchanged is not re-judged by a rule
             // added after it was written (same grandfathering as the kernel).
             if (mode === 'edit' && record) {
@@ -1115,7 +1132,7 @@ export function DynamicRecordDialog({
     const goNextStep = () => {
         const step = groups[clampedStep]
         const stepFields = step?.fields ?? []
-        const bag = validateValues(stepFields as ActionFieldDef[], formValues)
+        const bag = validateValues(requiredGateFields(stepFields, mode, formValues) as ActionFieldDef[], formValues)
         if (bagHasErrors(bag)) {
             const labels: Record<string, string> = {}
             for (const f of stepFields) labels[f.key] = localizeFieldLabel(f.label, t)
