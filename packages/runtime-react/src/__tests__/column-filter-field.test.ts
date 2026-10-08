@@ -35,12 +35,50 @@ describe('applyColumnFilterFields', () => {
 
     it('keeps the column option source when there is no separate field config', () => {
         const own = { ...cfg('user.avatar', [{ label: 'Uno', value: '42' }]), searchEndpoint: '/search/x' }
-        const out = applyColumnFilterFields([{ key: 'user.avatar', filterField: 'user_id' }], new Map([['user.avatar', own]]))
-        expect(out.get('user.avatar')).toMatchObject({
+        const onChange = vi.fn()
+        const withHandler = { ...own, onFilterChange: onChange }
+        const dynamicFilters: Record<string, string[]> = {}
+        const build = () =>
+            applyColumnFilterFields(
+                [{ key: 'user.avatar', filterField: 'user_id' }],
+                new Map([['user.avatar', withHandler]]),
+                dynamicFilters,
+            ).get('user.avatar')!
+        const first = build()
+        expect(first).toMatchObject({
             filterKey: 'user_id',
             options: [{ label: 'Uno', value: '42' }],
             searchEndpoint: '/search/x',
+            selectedValues: [],
         })
+        first.onFilterChange(first.filterKey, ['42'])
+        expect(onChange).toHaveBeenCalledWith('user_id', ['42'])
+        dynamicFilters[first.filterKey] = ['42']
+        expect(build().selectedValues).toEqual(['42'])
+    })
+
+    it('reads the selection from the snake_case filter_field key without field config', () => {
+        const onChange = vi.fn()
+        const out = applyColumnFilterFields(
+            [{ key: 'a.name', filter_field: 'a_id' }],
+            new Map([['a.name', cfg('a.name', [], ['ignored'], onChange)]]),
+            { a_id: ['7'], 'a.name': ['x'] },
+        )
+        const c = out.get('a.name')!
+        expect(c.filterKey).toBe('a_id')
+        expect(c.selectedValues).toEqual(['7'])
+    })
+
+    it('keeps facet type and loader of the display column without field config', () => {
+        const loadOptions = vi.fn()
+        const facet = { ...cfg('b.name'), filterType: 'facet' as const, loadOptions }
+        const c = applyColumnFilterFields(
+            [{ key: 'b.name', filterField: 'b_id' }],
+            new Map([['b.name', facet]]),
+            { b_id: ['3'] },
+        ).get('b.name')!
+        expect(c).toMatchObject({ filterType: 'facet', filterKey: 'b_id', selectedValues: ['3'] })
+        expect(c.loadOptions).toBe(loadOptions)
     })
 
     it('propagates selections under the filterField key (also snake_case)', () => {

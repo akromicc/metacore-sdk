@@ -13,12 +13,15 @@ interface FilterFieldColumn {
  * The header filter keeps living on the display column, but its `filterKey` —
  * and therefore the `f_*` param sent to the backend — becomes the filterField.
  * When the filterField has its own option source (static options, searchEndpoint
- * or loader) the column adopts it, so options are the FK values. Columns without
+ * or loader) the column adopts it, so options are the FK values. A column whose filterField has no config of its own keeps its display options
+ * (which may be names, not FK ids) while its selection is read from the
+ * filterField key. Columns without
  * `filterField` (or equal to their key) are returned untouched.
  */
 export function applyColumnFilterFields(
     columns: readonly FilterFieldColumn[] | undefined,
     configs: Map<string, ColumnFilterConfig>,
+    dynamicFilters: Record<string, string[]> = {},
 ): Map<string, ColumnFilterConfig> {
     if (!columns?.length) return configs
 
@@ -52,7 +55,10 @@ export function applyColumnFilterFields(
                   }
                 : {}),
             filterKey: filterField,
-            selectedValues: fieldConfig?.selectedValues ?? displayConfig.selectedValues,
+            // Sin config propia del campo, la selección vive bajo la key del filterField.
+            selectedValues: fieldConfig
+                ? (fieldConfig.selectedValues ?? displayConfig.selectedValues)
+                : (dynamicFilters[filterField] ?? []),
             onFilterChange: fieldConfig?.onFilterChange ?? displayConfig.onFilterChange,
         })
     }

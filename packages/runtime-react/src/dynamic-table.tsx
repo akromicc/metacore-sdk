@@ -1388,7 +1388,7 @@ export function DynamicTable({
                     : undefined,
             })
         }
-        return applyColumnFilterFields(metadata.columns, map)
+        return applyColumnFilterFields(metadata.columns, map, dynamicFilters)
     }, [metadata, filterOptionsMap, dynamicFilters, handleDynamicFilterChange, facetsBase, getFacetLoader, facetOptions, t, defaultFilters, effectiveHiddenColumns])
 
     // Prewarm every facet field once the configs settle, so a text column's
