@@ -35,6 +35,46 @@ Peers: `react`, `react-dom`, `react-i18next`, `i18next`, `@tanstack/react-router
 | `isLicenseOperable` / `isLicenseBlocking` / `isPresetEntitled` / `isTrialExpired` | Helpers puros sobre `LicenseState`, espejo de `State.Operable()/Blocking()` del backend. |
 | `<RealtimeProvider client={…} />` / `useRealtime()` / `useRealtimeInvalidate()` / `useRealtimeStatus()` / `useRealtimeTick()` | Reacción en vivo a `DATA_EVENT` del host (ver [Realtime](#realtime)). |
 
+## Íconos
+
+`<Icon name={value} />` (y `DynamicIcon`, que conserva su firma `{ name, className }`)
+interpreta cualquier valor de ícono que un backend haya guardado. La clasificación
+es `parseIconSpec(value)`, una función pura que devuelve
+`{ kind: 'lucide', name } | { kind: 'emoji', value } | { kind: 'image', src } | { kind: 'unknown', raw }`.
+
+| Formato | Ejemplos | Resultado |
+|---|---|---|
+| Lucide | `Brain`, `credit-card`, `credit_card`, `BrainIcon` | glifo Lucide |
+| FontAwesome 5/6 | `fas fa-brain`, `fa-solid fa-brain`, `far fa-heart`, `fa fa-user-md`, `fa-brain` | glifo Lucide vía tabla `FONT_AWESOME_ALIASES` + prueba del nombre en Lucide |
+| Otras fuentes | `mdi mdi-home`, `bi bi-house`, `ti ti-home`, `ri-home-line`, `mdi:home`, `material-icons home` | solo normalización contra Lucide (sin tabla) |
+| Emoji | `🩺`, `👨‍⚕️`, `🇲🇽` | un solo grafema emoji (`Intl.Segmenter` si existe) |
+| Imagen | `https://…`, `/ruta.png`, `./a.svg`, `uploads/a.png`, `data:image/(png\|jpeg\|webp\|gif\|svg+xml)` | `<img alt="" loading="lazy">`, se oculta si falla |
+| Otro | `javascript:…`, `data:text/html`, SVG inline, texto libre | `unknown`: no se pinta texto crudo (null o la prop `fallback`) |
+
+Lucide no incluye logos de marca (github, twitter…): las marcas (`fab fa-github`) quedan
+`unknown` salvo que el host registre un resolutor.
+
+**Orden de resolución:** (1) resolutores del host, el registrado más recientemente primero;
+el primero que devuelve algo distinto de `null` gana; (2) el parser integrado.
+
+```tsx
+import { registerIconResolver } from '@asteby/metacore-runtime-react'
+
+// Al arrancar el host. Devuelve un IconSpec (reusa los renderers del SDK),
+// un ReactNode (se pinta tal cual) o null para ceder.
+const dispose = registerIconResolver((spec) =>
+  spec.startsWith('sprite:') ? <svg><use href={`/sprite.svg#${spec.slice(7)}`} /></svg> : null,
+)
+```
+
+**Columnas:** `type: 'icon'` en la metadata de una columna pinta el valor con el resolutor
+(tabla y detalle). Es opt-in: una columna de texto llamada `icon` no cambia. Un valor que
+no se entiende muestra `-`.
+
+`DynamicIcon` (menús, botones de acción) no pinta imágenes, solo glifos/emoji/nodos del host; para imágenes usa `<Icon>` o una columna `type: 'icon'`.
+
+**Accesibilidad:** los íconos son decorativos (`aria-hidden`) salvo que se pase `label`.
+
 ## Realtime
 
 El host expone un `RealtimeAPI` (`@asteby/metacore-sdk`) — en ops viaja como

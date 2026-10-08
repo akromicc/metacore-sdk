@@ -422,6 +422,9 @@ export {
     type UseHotSwapReloadResult,
 } from './hotswap-reload-policy'
 export * from './dynamic-icon'
+export * from './icon-spec'
+export * from './icon-resolvers'
+export { FONT_AWESOME_ALIASES } from './icon-aliases'
 export type {
     ColumnFilterConfig,
     FilterOption as DynamicColumnFilterOption,

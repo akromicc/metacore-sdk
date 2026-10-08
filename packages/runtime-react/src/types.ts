@@ -451,6 +451,9 @@ export interface ColumnDefinition {
         | 'phone'
         | 'media-gallery'
         | 'image'
+        // Any icon value (Lucide, FontAwesome classes, emoji, image URL, host
+        // resolvers): rendered through the universal icon resolver.
+        | 'icon'
         // Landscape stack: wide image on top, label underneath (logos/photos).
         | 'image_stack'
         // Declarative pro cell renderers (resolved via `cellStyle ?? type`).
