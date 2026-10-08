@@ -73,6 +73,7 @@ import type { ColumnFilterConfig, GetDynamicColumns, RowActionPredicate } from '
 import { defaultGetDynamicColumns, DATE_CELL_TYPES, aggregateOf, formatAggregateTotal } from './dynamic-columns'
 import { useFacetLoaders, isLongTextColumn } from './use-facet-loaders'
 import { translateOptionLabels } from './filter-chips'
+import { applyColumnFilterFields } from './column-filter-field'
 import { dedupeById, useInfiniteScrollSentinel } from './use-infinite-scroll'
 import {
     DYNAMIC_TABLE_CARD_ESTIMATE_PX,
@@ -1387,7 +1388,7 @@ export function DynamicTable({
                     : undefined,
             })
         }
-        return map
+        return applyColumnFilterFields(metadata.columns, map)
     }, [metadata, filterOptionsMap, dynamicFilters, handleDynamicFilterChange, facetsBase, getFacetLoader, facetOptions, t, defaultFilters, effectiveHiddenColumns])
 
     // Prewarm every facet field once the configs settle, so a text column's
