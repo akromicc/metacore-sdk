@@ -1,5 +1,25 @@
 # @asteby/metacore-runtime-react
 
+## 49.11.0
+
+### Minor Changes
+
+- 85042b0: `DynamicTable` ahora respeta `ColumnDefinition.filterField` (y `filter_field`) en el filtro de cabecera: una columna de display de relación (p. ej. `institution_type.name`) filtra por su campo persistido (`institution_type_id`) y adopta las opciones de ese campo cuando las tiene. Aditivo: sin `filterField`, o igual a la key, el comportamiento no cambia.
+
+  Cambio de contrato a notar: en hosts cuya metadata declare `filterField`, el parámetro `f_*` enviado al backend pasa de la key de la columna a la FK (`f_institution_type_id`), que es lo buscado. Los hosts que lo parcheaban localmente (p. ej. `applyMetadataFilterFields`) pueden borrar el parche.
+
+  Matiz: si la columna con `filterField` no tiene una config propia de opciones para ese campo, conserva sus opciones de display, que pueden ser nombres y no IDs (posible discrepancia valor/FK frente al `f_*` enviado). En ese caso la selección se lee de la clave del `filterField` en los filtros dinámicos, no de la del display. El `f_*` enviado siempre pasa a ser la FK.
+
+- 2d51625: Registro de widgets de campo: `registerFieldWidget(name, component)` (devuelve disposer), `getFieldWidget`, `listFieldWidgets`, `clearFieldWidgets`, el hook `useFieldWidgetRegistryVersion` y los tipos `FieldWidgetProps` (`field`, `value`, `onChange`, `disabled`, `error`, `record`) y `FieldWidgetComponent`. `DynamicForm` y `DynamicRecordDialog` consultan el registro con el `widget` servido por el kernel (`FieldDef.Widget`) antes del render por `type`, de modo que un host enchufa mapas, horarios u otros editores propios. Un nombre sin registrar deja el comportamiento actual intacto.
+
+  Atención: un widget registrado tiene prioridad sobre los widgets built-in del SDK con el mismo nombre (`upload`, `icon`, `dynamic_select`); registrar uno con ese nombre reemplaza el render del SDK para esos campos.
+
+  `FieldWidgetProps.record` son los valores vivos del form en `DynamicForm` (también en modo crear) y el registro cargado/en edición en el diálogo.
+
+- 28c5db8: DynamicRecordDialog: el renderer cubre los tipos `password` (nunca se prellena ni se muestra; vacío = no se envía), `phone`/`tel`, `checkbox`, `time`, `hidden` (no se renderiza, sí va en el payload con su default), `multiselect` (ref/searchEndpoint o `options` estáticas vía `staticOptions` en DynamicMultiSelectField) y `file` (UploadField). Los tipos existentes no cambian.
+
+  Al editar, un `password` vacío ya no entra al gate de `required` (vacío = no cambiar), tanto al guardar como en "Siguiente" del wizard; al crear sigue siendo obligatorio. Comportamiento fijado con test: un campo `hidden` con `visible_when` siempre se omite del payload (no se evalúa el predicado), y un `hidden` sin `visible_when` viaja con su default. Deuda conocida: hay dos resolvers de campos (`EditField` del diálogo y `resolveWidget` de dynamic-form).
+
 ## 49.10.0
 
 ### Minor Changes

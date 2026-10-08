@@ -1,5 +1,11 @@
 # @asteby/metacore-pwa
 
+## 0.7.0
+
+### Minor Changes
+
+- 10c651f: Política de actualización compartida y opt-in para el service worker. Nuevo `updateStrategy: 'auto' | 'prompt'` en `PWAProvider` (default `'auto'`: sin ningún cambio de comportamiento), con `autoApplyAfterMs`, `staleAutoApplyAfterMs`, `dismissTtlMs`, `isSafeToApply` y `versionCheck`. En `'prompt'` nunca se recarga sin aceptación del usuario salvo que se configure auto-aplicación (por defecto nunca) y solo en un momento seguro (sin modal, sin formulario a medias, pestaña oculta o inactiva); una sola recarga tras `SKIP_WAITING` -> `controllerchange`. Nuevos exports: `decideUpdate`, `isSafeSnapshot`, `createUpdateController`, `useServiceWorkerUpdate` y tipos. Reemplaza los `ReloadPrompt` locales de cada app. Garantía anti-bucle: máximo un intento de recarga por `acceptedTtlMs` y por worker en espera (un `SKIP_WAITING` ignorado vuelve al aviso, el clic explícito reintenta); un worker en espera distinto reinicia antigüedad y descarte; un `<input type=file>` con archivos cuenta como edición en curso. Script `test` y `vitest` como devDependency.
+
 ## 0.6.15
 
 ### Patch Changes
