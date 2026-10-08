@@ -117,6 +117,8 @@ export interface NotificationsDropdownLabels {
   delete?: string
   /** Label of the delete button after the first click (needs a 2nd click). */
   confirmDelete?: string
+  /** Live-region announcement after the first Delete key press on a row. */
+  confirmDeleteKey?: string
 }
 
 export interface NotificationsDropdownProps {
@@ -181,6 +183,11 @@ export interface NotificationsDropdownProps {
   /**
    * Query params of the list request. Defaults to
    * `{ orderBy: 'created_at', orderDir: 'desc', per_page }`.
+   *
+   * The result is serialized on every render to detect changes, so a function
+   * must be deterministic (no `Date.now()`, random values or fresh objects with
+   * unstable content) or the list is refetched on every render. A function that
+   * throws or returns something non-serializable does not break rendering.
    */
   listParams?:
     | Record<string, unknown>
@@ -204,7 +211,10 @@ export interface NotificationsDropdownProps {
    * `onMarkRead(unreadIds)` when only that one is given.
    */
   onMarkAllRead?: () => Promise<void>
-  /** When given, each row shows a delete button (2nd click confirms). */
+  /**
+   * When given, each row shows a delete button (2nd click confirms). Keyboard:
+   * focus the row and press Delete twice (announced via a live region).
+   */
   onDelete?: (id: NotificationId) => Promise<void>
 
   // ---- Unread counter ----------------------------------------------------
@@ -242,4 +252,10 @@ export interface NotificationsDropdownProps {
   richText?: boolean
   /** Reload the page after the user grants push permission. Default true. */
   reloadAfterPermission?: boolean
+  /**
+   * Render the "loading" and "error + retry" states of the list. Default
+   * `false` (legacy): the empty message is shown while loading and when the
+   * request fails, exactly as before.
+   */
+  showLoadStates?: boolean
 }

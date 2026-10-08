@@ -55,7 +55,8 @@ import { NotificationsDropdown } from '@asteby/metacore-notifications'
 
 Everything below is optional; without these props the dropdown behaves exactly
 as before (`GET apiBasePath` → `{ data: [] }`, one `PATCH ${apiBasePath}/${id}`
-per item, unread count computed over the loaded page).
+per item, unread count computed over the loaded page, empty message while
+loading or on a failed request). Only the live-toast id changed (`ntf-<id>`).
 
 | Prop | Purpose |
 |---|---|
@@ -69,7 +70,7 @@ per item, unread count computed over the loaded page).
 | `onIngest(payload, item)` | Called once per NEW live notification (after dedup) — sound, query invalidation, hidden-tab push belong to the host. |
 | `footer`, `closeOnClick`, `renderAvatar`, `item.user` | Extra footer (`ReactNode` or `(close) => ReactNode`), menu close behaviour, custom avatar or `user: { name, avatar }` with initials fallback. |
 | `richText`, `reloadAfterPermission` | See below; `reloadAfterPermission={false}` skips the page reload after granting push permission. |
-| `labels.loading / error / retry` | The loading and error states (with retry) are now rendered instead of the empty message. |
+| `showLoadStates` (default `false`) | Opt in to the "loading" and "error + retry" states (`labels.loading / error / retry`). Off, the list shows the usual empty message while loading and after a failed request, as before. |
 
 `onNotificationClick` receives the full normalized item (metadata included).
 When it is present nothing is opened by default; without it only absolute
@@ -80,9 +81,21 @@ click to the same handler.
 `closeOnClick`: Radix already closes the menu when an item is selected, so the
 unset default keeps closing. `true` closes explicitly, `false` keeps it open.
 
-The row delete button lives inside a menu item; Radix menus do not move focus
-with Tab, so keyboard users reach it only by pointer. Prefer exposing deletion
-in a dedicated page if keyboard access matters.
+Deleting from the keyboard: focus the row (arrow keys) and press `Delete`
+(Supr); a live region announces `labels.confirmDeleteKey` ("Pulsa Supr otra vez
+para eliminar") and a second `Delete` on the same row confirms. Moving focus
+away cancels. The trash button is a pointer-only affordance (`aria-hidden`,
+`tabIndex=-1`) because an interactive control inside a `role="menuitem"` is not
+valid ARIA and Radix only focuses items.
+
+Concurrency: optimistic rollbacks are incremental (they only count rows still
+present and currently read/unread, so live notifications that arrived meanwhile
+are kept), a failed delete restores the row with its current read flag, and
+`fetchUnreadCount` results that overlap an in-flight action are discarded (the
+next poll reconciles). `listParams` as a function must be deterministic (no
+`Date.now()`): it is serialized every render to detect changes. Links are opened
+with `window.open(url, '_blank', 'noopener,noreferrer')`; live toasts use the id
+`ntf-<id>` so numeric ids cannot collide with sonner's own.
 
 ### Example: `{ notifications, unread_count }` + `read_at`
 

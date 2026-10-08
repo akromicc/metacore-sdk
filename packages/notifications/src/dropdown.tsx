@@ -52,6 +52,7 @@ const DEFAULT_LABELS: Required<NotificationsDropdownLabels> = {
   retry: 'Reintentar',
   delete: 'Eliminar notificación',
   confirmDelete: 'Pulsa de nuevo para eliminar',
+  confirmDeleteKey: 'Pulsa Supr otra vez para eliminar',
 }
 
 type Locale = Parameters<typeof formatDistanceToNow>[1] extends
@@ -116,6 +117,7 @@ export function NotificationsDropdown({
   renderAvatar,
   richText = true,
   reloadAfterPermission = true,
+  showLoadStates = false,
 }: NotificationsDropdownProps) {
   const labels = useMemo<Required<NotificationsDropdownLabels>>(
     () => ({ ...DEFAULT_LABELS, ...labelsOverride }),
@@ -154,6 +156,35 @@ export function NotificationsDropdown({
   notificationsRef.current = notifications
   const unreadCountRef = useRef(unreadCount)
   unreadCountRef.current = unreadCount
+  // Optimistic actions in flight. The unread poll ignores any result that
+  // overlaps an action (it would overwrite the optimistic counter).
+  const inflightRef = useRef(0)
+  const epochRef = useRef(0)
+  // Rows removed optimistically by a pending delete, with their CURRENT
+  // is_read, so a failed delete restores the up-to-date state.
+  const pendingDeletesRef = useRef<Map<string, NotificationItem>>(new Map())
+
+  /** Apply a list update synchronously to the ref too, so chained rollbacks see it. */
+  const commitList = (fn: (prev: NotificationItem[]) => NotificationItem[]) => {
+    const next = fn(notificationsRef.current)
+    notificationsRef.current = next
+    setNotifications(next)
+  }
+  const commitCount = (fn: (prev: number) => number) => {
+    const next = fn(unreadCountRef.current)
+    unreadCountRef.current = next
+    setUnreadCount(next)
+  }
+  const trackAction = async <T,>(run: () => Promise<T>): Promise<T> => {
+    inflightRef.current += 1
+    epochRef.current += 1
+    try {
+      return await run()
+    } finally {
+      inflightRef.current -= 1
+      epochRef.current += 1
+    }
+  }
 
   useEffect(() => {
     if (!enableBadge) return
@@ -167,7 +198,14 @@ export function NotificationsDropdown({
     if (lp) return lp
     return { orderBy: 'created_at', orderDir: 'desc', per_page: pp }
   }
-  const paramsKey = JSON.stringify(resolveParams())
+  // A non-serializable / throwing `listParams` must never break rendering; the
+  // request itself reports the failure through the error state.
+  let paramsKey: string
+  try {
+    paramsKey = JSON.stringify(resolveParams())
+  } catch {
+    paramsKey = '__unserializable__'
+  }
 
   const toItem = (raw: unknown): NotificationItem => {
     const fn = latestRef.current.normalizeItem
@@ -186,8 +224,8 @@ export function NotificationsDropdown({
       if (seq !== requestSeqRef.current) return
       const parsed = (cur.parseList ?? defaultParseList)(response.data)
       const items = parsed.items.map(toItem)
-      setNotifications(items)
-      setUnreadCount(
+      commitList(() => items)
+      commitCount(() =>
         typeof parsed.unreadCount === 'number'
           ? parsed.unreadCount
           : items.filter((n) => !n.is_read).length,
@@ -218,10 +256,15 @@ export function NotificationsDropdown({
       if (document.visibilityState !== 'visible') return
       const fn = latestRef.current.fetchUnreadCount
       if (!fn) return
+      const startEpoch = epochRef.current
       try {
         const n = await fn()
+        // An optimistic action started or finished while the poll was in
+        // flight: its result may predate the action, so drop it (the next
+        // tick reconciles).
+        if (inflightRef.current > 0 || epochRef.current !== startEpoch) return
         if (!cancelled && typeof n === 'number' && Number.isFinite(n)) {
-          setUnreadCount(Math.max(0, n))
+          commitCount(() => Math.max(0, n))
         }
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -257,12 +300,14 @@ export function NotificationsDropdown({
       const recordId = earlyMeta.record_id as string | undefined
       const eventKey = (earlyMeta.event ?? earlyMeta.rule) as string | undefined
       const hasPayloadId = payload.id !== undefined && payload.id !== null && payload.id !== ''
-      const id: NotificationId =
-        (hasPayloadId ? (payload.id as NotificationId) : '') ||
-        (recordId && eventKey ? `ntf:${eventKey}:${recordId}` : '') ||
-        (typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random()}`)
+      // `payload.id` of 0 is a valid id: test for null/undefined/'' only.
+      const id: NotificationId = hasPayloadId
+        ? (payload.id as NotificationId)
+        : recordId && eventKey
+          ? `ntf:${eventKey}:${recordId}`
+          : typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()}`
 
       const baseMeta =
         typeof payload.metadata === 'object' && payload.metadata
@@ -320,8 +365,8 @@ export function NotificationsDropdown({
       if (seenIdsRef.current.has(key)) return
       seenIdsRef.current.add(key)
 
-      setNotifications((prev) => [newNotification, ...prev])
-      setUnreadCount((prev) => prev + 1)
+      commitList((prev) => [newNotification, ...prev])
+      commitCount((prev) => prev + 1)
 
       // Quiet frames from POST /notifications/me already toasted on the client.
       const skipToast =
@@ -331,7 +376,9 @@ export function NotificationsDropdown({
 
       if (showToastOnIngest && !skipToast) {
         showNotificationToast({
-          id: newNotification.id,
+          // String id with a prefix: a raw numeric id could collide with
+          // sonner's own auto-incremented numeric toast ids.
+          id: `ntf-${String(newNotification.id)}`,
           title: newNotification.title,
           body: newNotification.message || undefined,
           type: newNotification.type || 'info',
@@ -345,7 +392,7 @@ export function NotificationsDropdown({
             const click = latestRef.current.onNotificationClick
             if (click) click(newNotification)
             else if (newNotification.link?.startsWith('http'))
-              window.open(newNotification.link, '_blank')
+              window.open(newNotification.link, '_blank', 'noopener,noreferrer')
           },
         })
       }
@@ -397,12 +444,22 @@ export function NotificationsDropdown({
     })
   }, [useSse, sseUrl, sseAccessToken, ingestWsPayload])
 
-  /** Undo an optimistic "mark read" for the given ids. */
+  /**
+   * Undo an optimistic "mark read". Only rows that are still present AND
+   * currently read are reverted (and counted): rows deleted meanwhile or
+   * already reverted must not inflate the counter.
+   */
   const rollbackRead = (ids: NotificationId[]) => {
-    setNotifications((prev) =>
-      prev.map((n) => (ids.some((id) => sameId(id, n.id)) ? { ...n, is_read: false } : n)),
-    )
-    setUnreadCount((prev) => prev + ids.length)
+    const has = (n: NotificationItem) => ids.some((id) => sameId(id, n.id))
+    const reverted = notificationsRef.current.filter((n) => n.is_read && has(n)).length
+    if (reverted > 0) {
+      commitList((prev) => prev.map((n) => (n.is_read && has(n) ? { ...n, is_read: false } : n)))
+      commitCount((prev) => prev + reverted)
+    }
+    // A row being deleted right now keeps its up-to-date flag for its own rollback.
+    for (const [key, row] of pendingDeletesRef.current) {
+      if (row.is_read && has(row)) pendingDeletesRef.current.set(key, { ...row, is_read: false })
+    }
   }
 
   const markRead = async (ids: NotificationId[]) => {
@@ -410,69 +467,74 @@ export function NotificationsDropdown({
       .filter((n) => !n.is_read && ids.some((id) => sameId(id, n.id)))
       .map((n) => n.id)
     if (targets.length === 0) return
-    setNotifications((prev) =>
+    commitList((prev) =>
       prev.map((n) =>
         targets.some((id) => sameId(id, n.id)) ? { ...n, is_read: true } : n,
       ),
     )
-    setUnreadCount((prev) => Math.max(0, prev - targets.length))
+    commitCount((prev) => Math.max(0, prev - targets.length))
     const cur = latestRef.current
-    if (cur.onMarkRead) {
+    await trackAction(async () => {
+      if (cur.onMarkRead) {
+        try {
+          await cur.onMarkRead(targets)
+        } catch (err) {
+          rollbackRead(targets)
+          // eslint-disable-next-line no-console
+          console.error('Failed to mark notification as read:', err)
+        }
+        return
+      }
       try {
-        await cur.onMarkRead(targets)
+        await Promise.all(
+          targets.map((id) =>
+            cur.apiClient.patch(`${cur.apiBasePath}/${id}`, { is_read: true }),
+          ),
+        )
       } catch (err) {
-        rollbackRead(targets)
         // eslint-disable-next-line no-console
         console.error('Failed to mark notification as read:', err)
       }
-      return
-    }
-    try {
-      await Promise.all(
-        targets.map((id) =>
-          cur.apiClient.patch(`${cur.apiBasePath}/${id}`, { is_read: true }),
-        ),
-      )
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to mark notification as read:', err)
-    }
+    })
   }
 
   const markAllRead = async () => {
     const unreadIds = notificationsRef.current.filter((n) => !n.is_read).map((n) => n.id)
-    const prevCount = unreadCountRef.current
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
-    setUnreadCount(0)
     const cur = latestRef.current
+    // Only `onMarkRead` given and nothing unread locally: no empty call.
+    if (!cur.onMarkAllRead && cur.onMarkRead && unreadIds.length === 0) return
+    commitList((prev) => prev.map((n) => (n.is_read ? n : { ...n, is_read: true })))
+    commitCount(() => 0)
     const custom =
       cur.onMarkAllRead ??
       (cur.onMarkRead ? () => cur.onMarkRead!(unreadIds) : undefined)
-    if (custom) {
+    await trackAction(async () => {
+      if (custom) {
+        try {
+          await custom()
+        } catch (err) {
+          // Incremental rollback: count only the rows still present that
+          // were unread; live notifications that arrived meanwhile stay.
+          const has = (n: NotificationItem) => unreadIds.some((id) => sameId(id, n.id))
+          const reverted = notificationsRef.current.filter((n) => n.is_read && has(n)).length
+          commitList((prev) => prev.map((n) => (n.is_read && has(n) ? { ...n, is_read: false } : n)))
+          commitCount((prev) => prev + reverted)
+          // eslint-disable-next-line no-console
+          console.error('Failed to mark all as read:', err)
+        }
+        return
+      }
       try {
-        await custom()
-      } catch (err) {
-        setNotifications((prev) =>
-          prev.map((n) =>
-            unreadIds.some((id) => sameId(id, n.id)) ? { ...n, is_read: false } : n,
+        await Promise.all(
+          unreadIds.map((id) =>
+            cur.apiClient.patch(`${cur.apiBasePath}/${id}`, { is_read: true }),
           ),
         )
-        setUnreadCount(prevCount)
+      } catch (err) {
         // eslint-disable-next-line no-console
         console.error('Failed to mark all as read:', err)
       }
-      return
-    }
-    try {
-      await Promise.all(
-        unreadIds.map((id) =>
-          cur.apiClient.patch(`${cur.apiBasePath}/${id}`, { is_read: true }),
-        ),
-      )
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to mark all as read:', err)
-    }
+    })
   }
 
   const deleteItem = async (id: NotificationId) => {
@@ -482,21 +544,31 @@ export function NotificationsDropdown({
     const index = list.findIndex((n) => sameId(n.id, id))
     if (index < 0) return
     const removed = list[index]!
-    setNotifications((prev) => prev.filter((n) => !sameId(n.id, id)))
-    if (!removed.is_read) setUnreadCount((prev) => Math.max(0, prev - 1))
-    try {
-      await remove(id)
-    } catch (err) {
-      setNotifications((prev) => {
-        if (prev.some((n) => sameId(n.id, id))) return prev
-        const next = prev.slice()
-        next.splice(Math.min(index, next.length), 0, removed)
-        return next
-      })
-      if (!removed.is_read) setUnreadCount((prev) => prev + 1)
-      // eslint-disable-next-line no-console
-      console.error('Failed to delete notification:', err)
-    }
+    const key = String(id)
+    pendingDeletesRef.current.set(key, removed)
+    commitList((prev) => prev.filter((n) => !sameId(n.id, id)))
+    if (!removed.is_read) commitCount((prev) => Math.max(0, prev - 1))
+    await trackAction(async () => {
+      try {
+        await remove(id)
+        pendingDeletesRef.current.delete(key)
+      } catch (err) {
+        // Restore with the CURRENT read flag (a concurrent rollback may have
+        // flipped it while the row was out of the list).
+        const restored = pendingDeletesRef.current.get(key) ?? removed
+        pendingDeletesRef.current.delete(key)
+        if (!notificationsRef.current.some((n) => sameId(n.id, id))) {
+          commitList((prev) => {
+            const next = prev.slice()
+            next.splice(Math.min(index, next.length), 0, restored)
+            return next
+          })
+          if (!restored.is_read) commitCount((prev) => prev + 1)
+        }
+        // eslint-disable-next-line no-console
+        console.error('Failed to delete notification:', err)
+      }
+    })
   }
 
   const shellProps: InnerDropdownProps = {
@@ -504,8 +576,8 @@ export function NotificationsDropdown({
     locale,
     notifications,
     unreadCount,
-    isLoading,
-    error,
+    isLoading: showLoadStates && isLoading,
+    error: showLoadStates ? error : null,
     onRetry: () => void fetchNotifications(),
     resolveImageUrl,
     onNotificationClick,
@@ -647,6 +719,9 @@ function DropdownShell({
         align='end'
         forceMount
       >
+        <div className='sr-only' role='status' aria-live='polite'>
+          {confirmDeleteId ? labels.confirmDeleteKey : ''}
+        </div>
         <DropdownMenuLabel className='border-b px-4 py-3 font-normal'>
           <div className='flex items-center justify-between gap-3'>
             <p className='text-sm font-semibold text-foreground'>{labels.title}</p>
@@ -699,8 +774,31 @@ function DropdownShell({
                   ]
                     .filter(Boolean)
                     .join(' ')}
+                  aria-keyshortcuts={onDelete ? 'Delete' : undefined}
                   onMouseLeave={() => {
                     if (confirming) setConfirmDeleteId(null)
+                  }}
+                  onBlur={(event) => {
+                    // Focus left the row (arrow keys, Tab, outside click).
+                    if (
+                      confirming &&
+                      !event.currentTarget.contains(event.relatedTarget as Node | null)
+                    ) {
+                      setConfirmDeleteId(null)
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    // Keyboard path for deletion: the trash button inside a
+                    // menuitem is not reachable (Radix only focuses items).
+                    if (!onDelete || event.key !== 'Delete') return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!confirming) {
+                      setConfirmDeleteId(idKey)
+                      return
+                    }
+                    setConfirmDeleteId(null)
+                    void onDelete(notification.id)
                   }}
                   onSelect={(event) => {
                     // Radix closes the menu on select (legacy behaviour).
@@ -715,7 +813,7 @@ function DropdownShell({
                       notification.link &&
                       notification.link.startsWith('http')
                     ) {
-                      window.open(notification.link, '_blank')
+                      window.open(notification.link, '_blank', 'noopener,noreferrer')
                     }
                     if (closeOnClick === true) close()
                   }}
@@ -778,6 +876,10 @@ function DropdownShell({
                     {onDelete ? (
                       <button
                         type='button'
+                        // Pointer-only affordance: an interactive control inside
+                        // role=menuitem violates ARIA; keyboard users use Delete.
+                        aria-hidden
+                        tabIndex={-1}
                         data-confirming={confirming ? 'true' : undefined}
                         aria-label={confirming ? labels.confirmDelete : labels.delete}
                         title={confirming ? labels.confirmDelete : labels.delete}

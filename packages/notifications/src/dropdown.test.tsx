@@ -72,6 +72,9 @@ function renderOpen(ui: ReactElement, open = true) {
   return result
 }
 
+/** Let the initial list request resolve before pushing live payloads. */
+const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+
 const noToast = { showToastOnIngest: false }
 
 beforeEach(() => {
@@ -127,7 +130,7 @@ describe('defaults (legacy contract)', () => {
     expect(open).not.toHaveBeenCalled()
     await reopen()
     fireEvent.click(screen.getByText('Title abs'))
-    expect(open).toHaveBeenCalledWith('https://x.test/y', '_blank')
+    expect(open).toHaveBeenCalledWith('https://x.test/y', '_blank', 'noopener,noreferrer')
   })
 
   it('caps the badge at 99+ by default and honours badgeMax', async () => {
@@ -361,7 +364,7 @@ describe('loading / error / retry', () => {
       .mockRejectedValueOnce(new Error('down'))
       .mockResolvedValueOnce({ data: { data: [item('z')] } })
     const client = { get, patch: vi.fn() } as unknown as NotificationsApiClient
-    renderOpen(<NotificationsDropdown apiClient={client} apiBasePath='/n' />)
+    renderOpen(<NotificationsDropdown apiClient={client} apiBasePath='/n' showLoadStates />)
     expect(screen.getByText('Cargando…')).toBeTruthy()
     await screen.findByText('No se pudieron cargar las notificaciones')
     fireEvent.click(screen.getByText('Reintentar'))
@@ -377,6 +380,7 @@ describe('loading / error / retry', () => {
         apiClient={client}
         apiBasePath='/n'
         labels={{ error: 'Fallo', retry: 'Otra vez' }}
+        showLoadStates
       />,
     )
     await screen.findByText('Fallo')
@@ -410,7 +414,7 @@ describe('realtime', () => {
         {...noToast}
       />,
     )
-    await waitFor(() => expect(screen.queryByText('Cargando…')).toBeNull())
+    await settle()
     await feed.emit({ id: 99, title: 'Vivo', body: 'b' })
     await screen.findByText('N:Vivo')
     expect(onIngest).toHaveBeenCalledTimes(1)
@@ -438,7 +442,7 @@ describe('realtime', () => {
     )
     await feed.emit({ id: 'l1', title: 'T', body: 'B', link: '/rel' })
     expect(toastCalls).toHaveLength(1)
-    expect(toastCalls[0]).toMatchObject({ id: 'l1', title: 'T', body: 'B', richText: false })
+    expect(toastCalls[0]).toMatchObject({ id: 'ntf-l1', title: 'T', body: 'B', richText: false })
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     ;(toastCalls[0]!.onClick as () => void)()
     expect(onClick).toHaveBeenCalledWith(expect.objectContaining({ id: 'l1', link: '/rel' }))
@@ -554,5 +558,265 @@ describe('richText', () => {
     expect(document.body.querySelector('img')).toBeNull()
     expect(document.body.querySelector('p b')).toBeNull()
     expect(screen.getByText(hostile)).toBeTruthy()
+  })
+})
+
+function deferred<T = void>() {
+  let resolve!: (v: T) => void
+  let reject!: (e: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+const rows = () => Array.from(document.querySelectorAll('[role="menuitem"]')) as HTMLElement[]
+
+describe('legacy default: load states are opt-in', () => {
+  it('first render and a failed GET show the usual empty text, no loading/error/retry', async () => {
+    const pending = deferred<{ data: unknown }>()
+    const get = vi.fn().mockReturnValueOnce(pending.promise)
+    const client = { get, patch: vi.fn() } as unknown as NotificationsApiClient
+    renderOpen(<NotificationsDropdown apiClient={client} apiBasePath='/n' />)
+    expect(screen.getByText('No tienes notificaciones')).toBeTruthy()
+    expect(screen.queryByText('Cargando…')).toBeNull()
+    await act(async () => {
+      pending.reject(new Error('down'))
+      await pending.promise.catch(() => {})
+    })
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('No tienes notificaciones')).toBeTruthy()
+    expect(screen.queryByText('No se pudieron cargar las notificaciones')).toBeNull()
+    expect(screen.queryByText('Reintentar')).toBeNull()
+  })
+})
+
+describe('live toast id', () => {
+  it('passes a prefixed string id for numeric ids and opens links with noopener', async () => {
+    const { client } = fakeClient({ data: [] })
+    const feed = liveFeed()
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    renderOpen(
+      <NotificationsDropdown apiClient={client} apiBasePath='/n' subscribeToNotifications={feed.subscribe} />,
+    )
+    await settle()
+    await feed.emit({ id: 5, title: 'T', link: 'https://x.test/a' })
+    expect(toastCalls[0]!.id).toBe('ntf-5')
+    ;(toastCalls[0]!.onClick as () => void)()
+    expect(open).toHaveBeenCalledWith('https://x.test/a', '_blank', 'noopener,noreferrer')
+  })
+
+  it('treats a numeric payload id of 0 as a real id', async () => {
+    const { client } = fakeClient({ data: [] })
+    const feed = liveFeed()
+    renderOpen(
+      <NotificationsDropdown apiClient={client} apiBasePath='/n' subscribeToNotifications={feed.subscribe} />,
+    )
+    await settle()
+    await feed.emit({ id: 0, title: 'Cero' })
+    await feed.emit({ id: 0, title: 'Cero' })
+    expect(toastCalls).toHaveLength(1)
+    expect(toastCalls[0]!.id).toBe('ntf-0')
+  })
+})
+
+describe('rollback with concurrent actions', () => {
+  it('rollbackRead does not count rows deleted meanwhile', async () => {
+    const { client } = fakeClient({ data: [item(1), item(2)] })
+    const mark = deferred()
+    const onMarkRead = vi.fn(() => mark.promise)
+    const onDelete = vi.fn(async () => {})
+    renderOpen(
+      <NotificationsDropdown apiClient={client} apiBasePath='/n' onMarkRead={onMarkRead} onDelete={onDelete} closeOnClick={false} />,
+    )
+    fireEvent.click(await screen.findByText('Title 1'))
+    expect(screen.getByText('1 nuevas')).toBeTruthy()
+    // delete the (already read) row 1 while the mark is in flight
+    fireEvent.click(screen.getAllByLabelText('Eliminar notificación')[0]!)
+    fireEvent.click(screen.getAllByLabelText('Pulsa de nuevo para eliminar')[0]!)
+    await waitFor(() => expect(screen.queryByText('Title 1')).toBeNull())
+    await act(async () => {
+      mark.reject(new Error('x'))
+      await mark.promise.catch(() => {})
+    })
+    expect(screen.getByText('1 nuevas')).toBeTruthy()
+  })
+
+  it('rollbackRead does not double count an already reverted id', async () => {
+    const { client } = fakeClient({ data: [item(1), item(2)] })
+    const a = deferred()
+    const b = deferred()
+    const onMarkRead = vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
+    renderOpen(
+      <NotificationsDropdown apiClient={client} apiBasePath='/n' onMarkRead={onMarkRead} closeOnClick={false} />,
+    )
+    fireEvent.click(await screen.findByText('Title 1'))
+    fireEvent.click(screen.getByText('Marcar todo como leído')) // marks only id 2 via onMarkRead([2])
+    await waitFor(() => expect(onMarkRead).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      a.reject(new Error('x'))
+      await a.promise.catch(() => {})
+    })
+    expect(screen.getByText('1 nuevas')).toBeTruthy()
+    await act(async () => {
+      b.reject(new Error('x'))
+      await b.promise.catch(() => {})
+    })
+    expect(screen.getByText('2 nuevas')).toBeTruthy()
+  })
+
+  it('markAll rollback is incremental: live notifications that arrived meanwhile are kept', async () => {
+    const { client } = fakeClient({ data: [item(1), item(2)] })
+    const feed = liveFeed()
+    const all = deferred()
+    renderOpen(
+      <NotificationsDropdown
+        apiClient={client}
+        apiBasePath='/n'
+        subscribeToNotifications={feed.subscribe}
+        onMarkAllRead={() => all.promise}
+        {...noToast}
+      />,
+    )
+    await screen.findByText('Title 1')
+    fireEvent.click(screen.getByText('Marcar todo como leído'))
+    await feed.emit({ id: 'live', title: 'Live' })
+    await reopen()
+    expect(screen.getByText('1 nuevas')).toBeTruthy()
+    await act(async () => {
+      all.reject(new Error('x'))
+      await all.promise.catch(() => {})
+    })
+    expect(screen.getByText('3 nuevas')).toBeTruthy()
+  })
+
+  it('delete rollback respects the CURRENT is_read after a failed mark-read', async () => {
+    const { client } = fakeClient({ data: [item(1), item(2)] })
+    const mark = deferred()
+    const del = deferred()
+    renderOpen(
+      <NotificationsDropdown
+        apiClient={client}
+        apiBasePath='/n'
+        onMarkRead={() => mark.promise}
+        onDelete={() => del.promise}
+        closeOnClick={false}
+      />,
+    )
+    fireEvent.click(await screen.findByText('Title 1'))
+    expect(screen.getByText('1 nuevas')).toBeTruthy()
+    fireEvent.click(screen.getAllByLabelText('Eliminar notificación')[0]!)
+    fireEvent.click(screen.getAllByLabelText('Pulsa de nuevo para eliminar')[0]!)
+    await waitFor(() => expect(screen.queryByText('Title 1')).toBeNull())
+    // mark-read of the deleted row fails -> it is unread again
+    await act(async () => {
+      mark.reject(new Error('x'))
+      await mark.promise.catch(() => {})
+    })
+    // delete fails -> the row comes back as unread, counter back to 2
+    await act(async () => {
+      del.reject(new Error('x'))
+      await del.promise.catch(() => {})
+    })
+    await screen.findByText('Title 1')
+    expect(screen.getByText('2 nuevas')).toBeTruthy()
+  })
+
+  it('a poll that overlaps an action does not overwrite the optimistic counter', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { client } = fakeClient({ data: [item(1), item(2)] })
+    const poll = deferred<number>()
+    const mark = deferred()
+    const fetchUnreadCount = vi.fn(() => poll.promise)
+    renderOpen(
+      <NotificationsDropdown
+        apiClient={client}
+        apiBasePath='/n'
+        onMarkRead={() => mark.promise}
+        fetchUnreadCount={fetchUnreadCount}
+        unreadPollMs={1000}
+        closeOnClick={false}
+      />,
+    )
+    await screen.findByText('Title 1')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(fetchUnreadCount).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByText('Title 1')) // optimistic: 2 -> 1
+    expect(screen.getByText('1 nuevas')).toBeTruthy()
+    await act(async () => {
+      poll.resolve(2) // stale server value from before the action
+      await poll.promise
+    })
+    expect(screen.getByText('1 nuevas')).toBeTruthy()
+    await act(async () => {
+      mark.resolve()
+      await mark.promise
+    })
+  })
+})
+
+describe('markAll with only onMarkRead', () => {
+  it('does not call onMarkRead([]) when nothing is unread', async () => {
+    const { client } = fakeClient({ data: [item(1, { is_read: true })] })
+    const onMarkRead = vi.fn(async () => {})
+    renderOpen(<NotificationsDropdown apiClient={client} apiBasePath='/n' onMarkRead={onMarkRead} />)
+    await screen.findByText('Title 1')
+    fireEvent.click(screen.getByText('Marcar todo como leído'))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(onMarkRead).not.toHaveBeenCalled()
+  })
+})
+
+describe('keyboard delete', () => {
+  it('Delete twice on the focused row confirms, with a live-region announcement', async () => {
+    const { client } = fakeClient({ data: [item(1), item(2)] })
+    const onDelete = vi.fn(async () => {})
+    renderOpen(<NotificationsDropdown apiClient={client} apiBasePath='/n' onDelete={onDelete} />)
+    await screen.findByText('Title 1')
+    const row = rows()[0]!
+    // the mouse button is out of the ARIA/tab order
+    const btn = row.querySelector('button') as HTMLButtonElement
+    expect(btn.getAttribute('aria-hidden')).toBe('true')
+    expect(btn.tabIndex).toBe(-1)
+    act(() => row.focus())
+    fireEvent.keyDown(row, { key: 'Delete' })
+    expect(onDelete).not.toHaveBeenCalled()
+    expect(screen.getByRole('status').textContent).toBe('Pulsa Supr otra vez para eliminar')
+    fireEvent.keyDown(row, { key: 'Delete' })
+    expect(onDelete).toHaveBeenCalledWith(1)
+    await waitFor(() => expect(screen.queryByText('Title 1')).toBeNull())
+    expect(screen.getByRole('status').textContent).toBe('')
+  })
+
+  it('moving focus away cancels the pending confirmation', async () => {
+    const { client } = fakeClient({ data: [item(1), item(2)] })
+    const onDelete = vi.fn(async () => {})
+    renderOpen(<NotificationsDropdown apiClient={client} apiBasePath='/n' onDelete={onDelete} />)
+    await screen.findByText('Title 1')
+    const [r1, r2] = rows()
+    act(() => r1!.focus())
+    fireEvent.keyDown(r1!, { key: 'Delete' })
+    act(() => r2!.focus())
+    fireEvent.keyDown(r1!, { key: 'Delete' })
+    expect(onDelete).not.toHaveBeenCalled()
+  })
+})
+
+describe('listParams robustness', () => {
+  it('a throwing listParams function does not throw during render', async () => {
+    const { client } = fakeClient({ data: [] })
+    expect(() =>
+      renderOpen(
+        <NotificationsDropdown
+          apiClient={client}
+          apiBasePath='/n'
+          listParams={() => {
+            throw new Error('bad')
+          }}
+        />,
+      ),
+    ).not.toThrow()
   })
 })
