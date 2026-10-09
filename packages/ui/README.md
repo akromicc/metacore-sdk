@@ -35,6 +35,7 @@ import { cn } from '@asteby/metacore-ui/lib'
 | `@asteby/metacore-ui/command-menu` | `CommandMenu` (router-agnostic). |
 | `@asteby/metacore-ui/hooks` | `useTableUrlState`, `useDialogState`, `useIsMobile`. |
 | `@asteby/metacore-ui/primitives` | shadcn/ui primitives: `Button`, `Input`, `Dialog`, `DropdownMenu`, `Popover`, `Command`, `Select`, `Sidebar`, `Sheet`, `Table`, `Tabs`, `Tooltip`, `ScrollArea`, `Sonner`, `Form`, `Textarea`, `Switch`, `Badge`, `Avatar`, `Checkbox`, `Label`, `Separator`, `Skeleton`, `Collapsible`, `AlertDialog`. |
+| `@asteby/metacore-ui/profile` | Detail-page kit (mobile-first): `ProfileHeader`, `SectionCard`, `StatStrip`, `DefinitionList`, `RecordList`/`RecordRow`, `ContactLink`, `EmptyState`, `PillTabsList`/`PillTabsTrigger`. |
 | `@asteby/metacore-ui/lib` | `cn`, `getPageNumbers`, `getCookie`/`setCookie`/`removeCookie`, `resolveColorCss`/`resolveColorHex`/`generateBadgeStyles`. |
 
 ## Decoupling from app internals
