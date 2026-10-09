@@ -8,4 +8,6 @@ DynamicRecordDialog: tres mejoras opcionales y retrocompatibles (sin las opcione
 - `FieldDef.maxSize` (bytes) y `FieldDef.accept` (MIME/extensiones) en campos `file` e `image`: un archivo que no cumple NO se sube a `/upload`; se muestra un error en el campo (`role="alert"`) y, en `image`, también toast. Ambos campos aceptan arrastrar y soltar sobre su zona (el botón/selector sigue operable por teclado). `UploadField` ahora también valida el tipo contra `accept` (antes solo el tamaño). Nuevas claves i18n `common.upload.invalid_type`. Exporta `fileMatchesAccept` y `validateUploadFile`.
 - `FieldDef.deriveFrom?: { field, transform: 'slug' }` (alias `derive_from`): mientras el usuario no edite el campo destino, se pre-rellena con el slug del origen (minúsculas, sin acentos, guiones); al editarlo a mano deja de derivarse (vaciarlo reactiva la derivación). Exporta `slugify`.
 
+Nota: `maxSize` y `accept` son validación de comodidad en el cliente (se saltan fácilmente); el backend debe seguir validando tipo y tamaño. En `mode='edit'`, `deriveFrom` no pisa un destino ya guardado (solo deriva si estaba vacío).
+
 NO cubierto: subir el archivo multipart directo al endpoint del modelo (como hace hoy el modal de categorías de TV de doctores.lat) — el contrato HTTP sigue siendo `POST /upload` + URL en el JSON; cambiarlo es una decisión de contrato del host.

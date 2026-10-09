@@ -139,6 +139,33 @@ describe('upload validation', () => {
         expect(post).not.toHaveBeenCalled()
     })
 
+    it('image: drop/dragover call preventDefault even with a value or while uploading', async () => {
+        renderDialog({ fields: [{ key: 'logo', label: 'Logo', type: 'image' }] }, {
+            mode: 'edit', recordId: '1', initialRecord: { id: 1, logo: '/files/a.png' },
+        })
+        await waitFor(() => expect(screen.getByText('Logo')).toBeTruthy())
+        const zone = document.querySelector('input[type="file"]')!.parentElement as HTMLElement
+        expect(zone.querySelector('img')).toBeTruthy()
+        const over = new Event('dragover', { bubbles: true, cancelable: true })
+        zone.dispatchEvent(over)
+        expect(over.defaultPrevented).toBe(true)
+        const drop = new Event('drop', { bubbles: true, cancelable: true })
+        Object.defineProperty(drop, 'dataTransfer', { value: { files: [png(10)] } })
+        zone.dispatchEvent(drop)
+        expect(drop.defaultPrevented).toBe(true)
+        expect(post.mock.calls.some((c) => c[0] === '/upload')).toBe(false)
+    })
+
+    it('image: input value is reset after a rejection so the same file can be re-picked', async () => {
+        renderDialog({ fields: [{ key: 'logo', label: 'Logo', type: 'image', maxSize: 1024 }] }, { mode: 'create' })
+        await waitFor(() => expect(screen.getByText('Logo')).toBeTruthy())
+        const input = document.querySelector('input[type="file"]') as HTMLInputElement
+        const spy = vi.spyOn(input, 'value', 'set')
+        fireEvent.change(input, { target: { files: [png(5000)] } })
+        await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+        expect(spy).toHaveBeenCalledWith('')
+    })
+
     it('image: valid file uploads as before; no options = unchanged (accept image/*)', async () => {
         renderDialog({ fields: [{ key: 'logo', label: 'Logo', type: 'image' }] }, { mode: 'create' })
         await waitFor(() => expect(screen.getByText('Logo')).toBeTruthy())
@@ -182,5 +209,23 @@ describe('deriveFrom slug', () => {
         fireEvent.change(inputOf('Slug'), { target: { value: 'mi-slug' } })
         fireEvent.change(inputOf('Nombre'), { target: { value: 'Otro Nombre' } })
         expect(inputOf('Slug').value).toBe('mi-slug')
+    })
+
+    it('edit: an existing slug equal to slugify(name) is NOT overwritten', async () => {
+        renderDialog({ fields }, {
+            mode: 'edit', recordId: '1', initialRecord: { id: 1, name: 'Mi Nombre', slug: 'mi-nombre' },
+        })
+        await waitFor(() => expect(inputOf('Nombre').value).toBe('Mi Nombre'))
+        fireEvent.change(inputOf('Nombre'), { target: { value: 'Otro Nombre' } })
+        expect(inputOf('Slug').value).toBe('mi-nombre')
+    })
+
+    it('edit: an empty slug is still derived', async () => {
+        renderDialog({ fields }, {
+            mode: 'edit', recordId: '1', initialRecord: { id: 1, name: 'Mi Nombre', slug: '' },
+        })
+        await waitFor(() => expect(inputOf('Nombre').value).toBe('Mi Nombre'))
+        fireEvent.change(inputOf('Nombre'), { target: { value: 'Otro Nombre' } })
+        expect(inputOf('Slug').value).toBe('otro-nombre')
     })
 })

@@ -171,12 +171,12 @@ export function UploadField({ field, value, onChange }: UploadFieldProps) {
             className="grid gap-1.5"
             data-widget="upload"
             onDragOver={(e) => {
-                if (!uploading) e.preventDefault()
+                e.preventDefault()
             }}
             onDrop={(e) => {
+                e.preventDefault()
                 const dropped = e.dataTransfer?.files?.[0]
                 if (!dropped || uploading) return
-                e.preventDefault()
                 void handleFile(dropped)
             }}
         >

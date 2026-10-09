@@ -859,6 +859,14 @@ export function DynamicRecordDialog({
                     ? ''
                     : resolvePath(rec, field.key) ?? field.defaultValue ?? ''
             }
+            // En edición, un destino derivado ya guardado no se pisa: cuenta como manual.
+            if (!isCreate) {
+                for (const field of meta.fields ?? []) {
+                    if (getDeriveFrom(field) && initial[field.key] !== '' && initial[field.key] != null) {
+                        manualDerived.current.add(field.key)
+                    }
+                }
+            }
             setFormValues(initial)
         }
 
@@ -2592,6 +2600,7 @@ function ImageUploadField({ field, value, onChange }: { field: FieldDef; value: 
                       })
             setError(msg)
             toast.error(msg)
+            if (inputRef.current) inputRef.current.value = ''
             return
         }
         setError(null)
@@ -2622,16 +2631,17 @@ function ImageUploadField({ field, value, onChange }: { field: FieldDef; value: 
             <div
                 className="flex items-center gap-3"
                 onDragOver={(e) => {
-                    if (value || uploading) return
+                    // Siempre preventDefault: si no, el navegador abre el archivo soltado.
                     e.preventDefault()
+                    if (value || uploading) return
                     setDragging(true)
                 }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={(e) => {
+                    e.preventDefault()
                     setDragging(false)
                     const dropped = e.dataTransfer?.files?.[0]
                     if (!dropped || value || uploading) return
-                    e.preventDefault()
                     void upload(dropped)
                 }}
             >
