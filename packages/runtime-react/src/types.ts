@@ -675,6 +675,12 @@ export interface ActionFieldDef {
     key: string
     label: string
     type: string
+    /**
+     * `icon` widget only: restrict to lucide icon names (hides the "Imagen"
+     * tab). snake_case alias `icon_only` accepted from metadata JSON.
+     */
+    iconOnly?: boolean
+    icon_only?: boolean
     required?: boolean
     /**
      * Campo de solo lectura (escrito por el servidor/sistema): `DynamicForm` lo
