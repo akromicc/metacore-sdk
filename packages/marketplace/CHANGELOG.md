@@ -1,5 +1,12 @@
 # @asteby/metacore-marketplace
 
+## 145.0.0
+
+### Patch Changes
+
+- Updated dependencies [f746175]
+  - @asteby/metacore-app-providers@146.1.0
+
 ## 144.0.0
 
 ### Patch Changes

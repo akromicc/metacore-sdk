@@ -1,5 +1,14 @@
 # @asteby/metacore-fullstack-example
 
+## 0.1.329
+
+### Patch Changes
+
+- Updated dependencies [2c03701]
+- Updated dependencies [f746175]
+  - @asteby/metacore-theme@2.25.1
+  - @asteby/metacore-app-providers@146.1.0
+
 ## 0.1.328
 
 ### Patch Changes
