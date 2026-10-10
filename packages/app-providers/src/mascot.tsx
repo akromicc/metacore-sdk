@@ -20,8 +20,8 @@ export type MascotState =
 export interface MascotSkin {
   /** Display name shown alongside the mascot (e.g. "Aby", "Llantonio"). */
   name: string
-  /** Tooth shape around the body: fine dashed tire tread, or 6 rounded gear teeth. */
-  toothShape: 'tire-tread' | 'gear-teeth'
+  /** Tooth shape around the body: fine dashed tire tread, 6 rounded gear teeth, or a rounded hex frame. */
+  toothShape: 'tire-tread' | 'gear-teeth' | 'hex-frame'
   /** Whether to draw the small antenna/status LED above the body. */
   antenna: boolean
   /** Face screen tone: a light panel, or a dark glass panel. */
@@ -66,6 +66,24 @@ export const MASCOT_SKINS: Record<string, MascotSkin> = {
       glow: '#ff5b63',
       screen: '#0d0a0b',
       screenCenter: '#1f1518',
+    },
+  },
+  // Gov-tech vertical: navy/azul institucional + a rounded hexagon frame
+  // echoing that vertical's hex-isotype logo, instead of gear teeth or tire
+  // tread — proves toothShape isn't just "which vehicle part", any closed
+  // ring shape works the same way.
+  'gobi-navy': {
+    name: 'Gobi',
+    toothShape: 'hex-frame',
+    antenna: false,
+    screenTone: 'dark',
+    colors: {
+      tire: '#051C35',
+      treadOrTooth: '#102E6B',
+      accent: '#2160DE',
+      glow: '#628FEA',
+      screen: '#041324',
+      screenCenter: '#071A36',
     },
   },
 }
@@ -129,6 +147,28 @@ function TireTread({ stroke }: { stroke: string }) {
   return (
     <g className="mascot-tread" opacity={0.9}>
       <circle cx="100" cy="130" r="69" fill="none" stroke={stroke} strokeWidth="10" strokeDasharray="6 7" />
+    </g>
+  )
+}
+
+// Rounded hexagon ring (pointy-top, r=72) around the body, plus two small
+// accent nodes at opposite vertices for a connected-node motif (a vertical's
+// hex-isotype logo made of linked circles). strokeLinejoin=round softens the
+// corners so it reads as a chassis plate, not a sharp sign.
+const HEX_POINTS = '100,58 162.4,94 162.4,166 100,202 37.6,166 37.6,94'
+const HEX_NODES: Array<[number, number]> = [
+  [100, 58],
+  [162.4, 166],
+  [37.6, 166],
+]
+
+function HexFrame({ stroke, accent }: { stroke: string; accent: string }) {
+  return (
+    <g className="mascot-tread">
+      <polygon points={HEX_POINTS} fill="none" stroke={stroke} strokeWidth="9" strokeLinejoin="round" />
+      {HEX_NODES.map(([x, y]) => (
+        <circle key={`${x}-${y}`} cx={x} cy={y} r="4.5" fill={accent} />
+      ))}
     </g>
   )
 }
@@ -240,6 +280,8 @@ export function Mascot({
 
         {cfg.toothShape === 'gear-teeth' ? (
           <GearTeeth fill={colors.treadOrTooth} />
+        ) : cfg.toothShape === 'hex-frame' ? (
+          <HexFrame stroke={colors.treadOrTooth} accent={colors.accent} />
         ) : (
           <TireTread stroke={colors.treadOrTooth} />
         )}
