@@ -24,6 +24,11 @@ export {
   type PlatformConfigProviderProps,
 } from './platform-config-provider'
 export {
+  DEFAULT_AGENT_SUGGESTIONS,
+  resolveAgentSuggestions,
+  useAgentSuggestions,
+} from './agent-suggestions'
+export {
   OrgConfigProvider,
   useOrgConfig,
   FALLBACK_ORG_CONFIG,
