@@ -13,12 +13,16 @@ import {
   type GetImageUrl,
 } from './image-url-context'
 import {
+  AgentActorContext,
   CurrencyContext,
+  ProvenanceOriginContext,
   NumberLocalesContext,
   SystemActorContext,
   TaxRateContext,
   TimeZoneContext,
+  type AgentActor,
   type NumberLocales,
+  type ProvenanceOriginResolver,
   type SystemActor,
 } from './org-runtime-context'
 
@@ -41,6 +45,17 @@ export interface OrgRuntimeProviderProps {
    * who created/changed it and nobody did — e.g. `{ name: 'Gobi' }`.
    */
   systemActor?: SystemActor
+  /**
+   * Presentation of the app's agent (name + avatar) in provenance badges:
+   * records an agent made, proposed, or a person made with it — e.g.
+   * `{ name: 'Gobi', avatarUrl: '/images/gobi.svg' }`.
+   */
+  agentActor?: AgentActor
+  /**
+   * Names the origin of system-made records without stored provenance
+   * (legacy rows). Optional; see ProvenanceOriginResolver.
+   */
+  provenanceOrigin?: ProvenanceOriginResolver
   /** Resolver turning a stored path into a fetchable URL. Defaults to identity. */
   getImageUrl?: GetImageUrl
   children: ReactNode
@@ -52,6 +67,8 @@ export function OrgRuntimeProvider({
   taxRate,
   numberLocales,
   systemActor,
+  agentActor,
+  provenanceOrigin,
   getImageUrl = identityImageUrl,
   children,
 }: OrgRuntimeProviderProps) {
@@ -62,7 +79,11 @@ export function OrgRuntimeProvider({
           <TaxRateContext.Provider value={taxRate}>
             <NumberLocalesContext.Provider value={numberLocales}>
               <SystemActorContext.Provider value={systemActor}>
-                {children}
+                <AgentActorContext.Provider value={agentActor}>
+                  <ProvenanceOriginContext.Provider value={provenanceOrigin}>
+                    {children}
+                  </ProvenanceOriginContext.Provider>
+                </AgentActorContext.Provider>
               </SystemActorContext.Provider>
             </NumberLocalesContext.Provider>
           </TaxRateContext.Provider>

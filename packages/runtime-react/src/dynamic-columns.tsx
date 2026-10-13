@@ -39,6 +39,7 @@ import {
 } from '@asteby/metacore-ui/lib'
 import { Progress } from './dialogs/_primitives'
 import { useSystemActor } from './org-runtime-context'
+import { AuthorshipCell, hasSpecialAuthorship } from './provenance'
 import { humanizeToken, translateMetadataLabel } from './dynamic-columns-helpers'
 import { objectLabel } from './dynamic-relation-helpers'
 import {
@@ -970,6 +971,9 @@ export function makeDefaultGetDynamicColumns(
         currency?: string,
         rowActionPredicate?: RowActionPredicate,
     ): ColumnDef<any>[] {
+        // Model key for the provenance origin resolver: last endpoint segment
+        // ("/data/findings" → "findings").
+        const model = (metadata.endpoint || '').split('?')[0].split('/').filter(Boolean).pop()
         // currentLanguage may be a regional number locale (es-MX, en-US) when
         // the host sets OrgRuntimeProvider numberLocales; dates key off its base.
         const dateLocale = currentLanguage?.toLowerCase().startsWith('en') ? enUS : es
@@ -1223,6 +1227,16 @@ export function makeDefaultGetDynamicColumns(
                                 resolvedName ||
                                 resolveMissingActorLabel(renderAs, col.key, namePath, t)
                             const desc = getNestedValue(row.original, col.description || '')
+
+                            // Provenance (kernel `provenance`): a person with
+                            // the agent, the agent alone, or the system /
+                            // an integration with its origin.
+                            if (
+                                isSystemActorColumn(renderAs, col.key, namePath) &&
+                                hasSpecialAuthorship(row.original as Record<string, unknown>)
+                            ) {
+                                return <AuthorshipCell row={row.original as Record<string, unknown>} model={model} />
+                            }
 
                             if (!resolvedName && isSystemActorColumn(renderAs, col.key, namePath)) {
                                 return (

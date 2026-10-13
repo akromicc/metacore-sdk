@@ -200,5 +200,34 @@
     "source_loaded_partial_one": "{{count}} renglón con lo que falta · {{covered}} ya completos (omitidos)",
     "source_loaded_partial_other": "{{count}} renglones con lo que falta · {{covered}} ya completos (omitidos)",
     "source_all_covered": "Ese documento ya se registró completo; no queda nada pendiente."
+  },
+  "provenance": {
+    "system": "Sistema",
+    "agent": "Asistente",
+    "user": "Usuario",
+    "with": "{{person}} con {{agent}}",
+    "proposedBy": "Propuesto por {{agent}}",
+    "pending": "Propuesta pendiente",
+    "authorizedBy": "Autorizó: {{person}}",
+    "onBehalfOf": "En nombre de {{person}}",
+    "proposal": "{{agent}} propuso: {{summary}}",
+    "createdBy": "Creado por {{who}}",
+    "via": {
+      "chat": "Chat",
+      "automation": "Automatización",
+      "import": "Importación",
+      "webhook": "Webhook",
+      "seed": "Datos iniciales",
+      "migration": "Migración",
+      "job": "Proceso programado",
+      "event": "Evento",
+      "ui": "Manual",
+      "api": "API"
+    },
+    "mode": {
+      "manual": "Manual",
+      "assisted": "Con asistencia",
+      "automated": "Automático"
+    }
   }
 }

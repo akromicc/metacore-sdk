@@ -92,3 +92,39 @@ export const SystemActorContext = createContext<SystemActor | undefined>(undefin
 
 /** Reads the nearest system-actor presentation (undefined outside a provider). */
 export const useSystemActor = () => useContext(SystemActorContext)
+
+/**
+ * How the app's AGENT (its assistant: Gobi in GobiernOS) is presented when a
+ * record's provenance says an agent made it or proposed it. Separate from
+ * `SystemActor`: unattended platform work (seeds, imports) is not the agent.
+ * `undefined` outside a provider → the provenance `actor_name`, else a
+ * localized "Asistente"/"Assistant".
+ */
+export interface AgentActor {
+    /** Display name (already localized). */
+    name?: string
+    /** Absolute URL or app path of the avatar image; used as-is. */
+    avatarUrl?: string
+}
+
+export const AgentActorContext = createContext<AgentActor | undefined>(undefined)
+
+/** Reads the nearest agent presentation (undefined outside a provider). */
+export const useAgentActor = () => useContext(AgentActorContext)
+
+/**
+ * Host hook naming the ORIGIN of a record that has no stored provenance but
+ * was clearly made by the system (null `created_by_id`): e.g. GobiernOS maps
+ * `findings` → "Importación de investigación pública". Return `undefined` when
+ * unknown — the badge then shows the system actor alone, never an invented
+ * origin.
+ */
+export type ProvenanceOriginResolver = (
+    model: string | undefined,
+    row: Record<string, unknown> | null | undefined,
+) => string | undefined
+
+export const ProvenanceOriginContext = createContext<ProvenanceOriginResolver | undefined>(undefined)
+
+/** Reads the nearest origin resolver (undefined outside a provider). */
+export const useProvenanceOrigin = () => useContext(ProvenanceOriginContext)
