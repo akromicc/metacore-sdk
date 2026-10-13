@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import { ArrowDownRight, ArrowRight, ArrowUpRight, ExternalLink } from 'lucide-react'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Check, ExternalLink } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -83,7 +83,7 @@ export function GenerativeUI({ spec, onAction, onNavigate, busy, fallback = null
   if (!parsed.ok) return <>{fallback}</>
   const s: UISpec = parsed.spec
   return (
-    <section className={cn('flex w-full flex-col gap-2', className)} aria-label={s.title || undefined} data-genui=''>
+    <section className={cn('@container flex w-full flex-col gap-2', className)} aria-label={s.title || undefined} data-genui=''>
       {s.title ? <h3 className='m-0 text-sm font-semibold text-foreground'>{s.title}</h3> : null}
       {s.blocks.map((b, i) => (
         <Block key={i} block={b} onAction={onAction} onNavigate={onNavigate} busy={busy} />
@@ -162,10 +162,10 @@ function Badges({ badges }: { badges?: UIBadge[] }) {
 function Fields({ fields }: { fields?: UIField[] }) {
   if (!fields?.length) return null
   return (
-    <dl className='m-0 grid grid-cols-1 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-[minmax(7rem,auto)_1fr]'>
+    <dl className='m-0 grid grid-cols-1 gap-x-4 gap-y-1 text-sm @sm:grid-cols-[minmax(6rem,auto)_1fr] @sm:gap-y-1.5'>
       {fields.map((f, i) => (
         <div key={i} className='contents'>
-          <dt className='text-muted-foreground'>{f.label}</dt>
+          <dt className='text-xs text-muted-foreground @sm:text-sm'>{f.label}</dt>
           <dd className='m-0 whitespace-pre-line break-words text-foreground'>{f.value}</dd>
         </div>
       ))}
@@ -184,7 +184,7 @@ function KPIView({ block }: { block: KPIBlock }) {
   return (
     <div className='w-full'>
       {block.title ? <p className='mb-1 text-xs font-medium text-muted-foreground'>{block.title}</p> : null}
-      <ul className='m-0 grid list-none grid-cols-2 gap-2 p-0 sm:grid-cols-3'>
+      <ul className='m-0 grid list-none grid-cols-2 gap-2 p-0 @md:grid-cols-3'>
         {block.items.map((it, i) => {
           const Icon = it.trend ? TREND_ICON[it.trend] : null
           return (
@@ -242,7 +242,7 @@ function TableView({ block }: { block: TableBlock }) {
     <div className='w-full'>
       {block.title ? <p className='mb-1 text-xs font-medium text-muted-foreground'>{block.title}</p> : null}
       {/* Desktop: table. Mobile: one card per row. */}
-      <div className='hidden overflow-x-auto rounded-lg border sm:block'>
+      <div className='hidden overflow-x-auto rounded-lg border @md:block'>
         <Table>
           {block.caption ? <TableCaption>{block.caption}</TableCaption> : null}
           <TableHeader>
@@ -265,7 +265,7 @@ function TableView({ block }: { block: TableBlock }) {
           </TableBody>
         </Table>
       </div>
-      <ul className='m-0 flex list-none flex-col gap-2 p-0 sm:hidden'>
+      <ul className='m-0 flex list-none flex-col gap-2 p-0 @md:hidden'>
         {rows.map((r, i) => (
           <li key={i} className='rounded-lg border bg-card p-2.5'>
             <Fields fields={block.columns.map((c) => ({ label: c.label, value: cell(r[c.key]) }))} />
@@ -401,12 +401,16 @@ function ConfirmView({ block, onAction, onNavigate, busy }: BlockProps & { block
     Object.fromEntries((block.inputs ?? []).map((i) => [i.name, i.value ?? (i.kind === 'switch' ? false : '')])),
   )
   const [pending, setPending] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
   const missing = (block.inputs ?? []).some((i) => i.required && (values[i.name] === '' || values[i.name] === null))
   const run = async (id: string, params: Record<string, Scalar> = {}) => {
     if (!onAction) return
     setPending(id)
     try {
       await onAction({ id, params, values })
+      setDone(id)
+    } catch {
+      // The host already reported the failure; keep the actions available.
     } finally {
       setPending(null)
     }
@@ -468,7 +472,13 @@ function ConfirmView({ block, onAction, onNavigate, busy }: BlockProps & { block
         </CardContent>
       ) : null}
       <CardFooter className='flex flex-wrap gap-2 px-4'>
-        {block.actions.map((a) => (
+        {done ? (
+          <p role='status' className='m-0 flex items-center gap-1.5 text-sm font-medium text-[var(--success,oklch(0.6_0.15_155))]'>
+            <Check className='size-4' aria-hidden />
+            {block.actions.find((a) => a.id === done)?.label}
+          </p>
+        ) : null}
+        {!done && block.actions.map((a) => (
           <Button
             key={a.id}
             type='button'

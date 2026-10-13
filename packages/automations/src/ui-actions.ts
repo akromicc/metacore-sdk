@@ -6,8 +6,9 @@ export const AUTOMATION_UI_ACTIONS = ['automations.confirm', 'automations.discar
 
 /**
  * Maps the declared actions of automation cards (generative UI in the chat)
- * to the REST API. Returns true when the action was handled, so hosts can
- * chain other handlers.
+ * to the REST API. Returns true when the action was handled (false lets hosts
+ * chain other handlers); rethrows API errors after onError so the card keeps
+ * its buttons.
  */
 export function automationUIActionHandler(api: AutomationsApi, hooks: { onDone?: (id: string, action: string) => void; onError?: (err: unknown) => void } = {}) {
   return async (ev: UIActionEvent): Promise<boolean> => {
@@ -21,6 +22,7 @@ export function automationUIActionHandler(api: AutomationsApi, hooks: { onDone?:
       hooks.onDone?.(id, ev.id)
     } catch (err) {
       hooks.onError?.(err)
+      throw err // the card keeps its buttons
     }
     return true
   }

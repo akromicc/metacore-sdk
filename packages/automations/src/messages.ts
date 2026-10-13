@@ -30,7 +30,7 @@ export const AUTOMATIONS_MESSAGES_ES = {
   'automations.channels': 'Canales',
   'automations.tools': 'Consultas',
   'automations.uses_llm': 'Usa IA',
-  'automations.uses_llm.no': 'No (consulta + plantilla, sin costo de IA)',
+  'automations.uses_llm.no': 'No (sin costo de IA)',
   'automations.uses_llm.yes': 'Sí, resumen con modelo económico y tope por corrida',
   'automations.cost': 'Consumo acumulado',
   'automations.reason': 'Motivo',

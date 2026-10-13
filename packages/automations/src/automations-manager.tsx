@@ -346,7 +346,7 @@ function Preview({ preview, t, onNavigate }: { preview: { output?: RunOutput; er
       <p className='m-0 text-xs font-medium text-muted-foreground'>{t('automations.preview')}</p>
       {preview.error ? <p className='m-0 text-sm text-destructive'>{preview.error}</p> : null}
       {o?.title ? <p className='m-0 text-sm font-semibold'>{o.title}</p> : null}
-      {o?.text ? <p className='m-0 whitespace-pre-line text-sm'>{o.text}</p> : null}
+      {o?.text ? <p className='m-0 whitespace-pre-line text-sm'>{o.items?.length ? o.text.split('\n')[0] : o.text}</p> : null}
       {o?.items?.length ? (
         <ul className='m-0 flex list-disc flex-col gap-1 pl-5 text-sm'>
           {o.items.map((it) => (

@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from 'react'
+import { useState, type ReactElement } from 'react'
 import { GenerativeUI } from './generative-ui'
 import type { UIActionHandler } from './types'
 
@@ -6,6 +6,7 @@ import type { UIActionHandler } from './types'
 export interface GenerativeUIAgentResult {
   kind: string
   embed?: { type?: string; ui?: unknown }
+  [key: string]: unknown
 }
 
 export interface GenerativeUIResultOptions {
@@ -23,7 +24,7 @@ export interface GenerativeUIResultOptions {
  * The chat already turns every embed into a result of its `type`, so `ui`
  * embeds produced by kernel tools render without touching the chat package.
  */
-export function createGenerativeUIResult(opts: GenerativeUIResultOptions = {}): ComponentType<{ result: GenerativeUIAgentResult }> {
+export function createGenerativeUIResult(opts: GenerativeUIResultOptions = {}): (props: { result: GenerativeUIAgentResult }) => ReactElement {
   function GenerativeUIResult({ result }: { result: GenerativeUIAgentResult }) {
     const [busy, setBusy] = useState(false)
     const onAction: UIActionHandler | undefined = opts.onAction

@@ -35,6 +35,24 @@ describe('GenerativeUI', () => {
     fireEvent.change(screen.getByLabelText('Hora'), { target: { value: '08:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(onAction).toHaveBeenCalledWith({ id: 'automations.confirm', params: { id: 'abc' }, values: { hora: '08:30' } }))
+    // Done: the buttons give way to a status line.
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Confirmar'))
+    expect(screen.queryByRole('button', { name: 'Confirmar' })).toBeNull()
+  })
+
+  it('keeps the actions when the host reports a failure', async () => {
+    const onAction = vi.fn(async () => {
+      throw new Error('409')
+    })
+    render(
+      <GenerativeUI
+        onAction={onAction}
+        spec={{ version: 'genui/v1', blocks: [{ type: 'confirm', title: 'x', actions: [{ id: 'automations.confirm', label: 'Confirmar', variant: 'primary' }] }] }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    await waitFor(() => expect(onAction).toHaveBeenCalled())
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Confirmar' }) as HTMLButtonElement).disabled).toBe(false))
   })
 
   it('opens external links safely and internal ones through the router', () => {
