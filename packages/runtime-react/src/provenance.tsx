@@ -417,10 +417,10 @@ export function ProvenanceBadge({ provenance, person, system, fallbackOrigin, va
     if (!a) return null
     const inline = variant === 'inline'
     const body = inline ? (
-        <span className="inline-flex min-w-0 items-center gap-2">
+        <span className="inline-flex min-w-0 max-w-full items-center gap-2 overflow-hidden">
             <ProvenanceAvatar authorship={a} size="sm" />
-            <span className="truncate font-medium">{a.label}</span>
-            {a.subtitle ? <span className="truncate text-muted-foreground">· {a.subtitle}</span> : null}
+            <span className="shrink-0 truncate font-medium">{a.label}</span>
+            {a.subtitle ? <span className="min-w-0 truncate text-muted-foreground">· {a.subtitle}</span> : null}
         </span>
     ) : (
         <span className="flex min-w-0 items-center gap-3">
@@ -446,7 +446,7 @@ export function ProvenanceBadge({ provenance, person, system, fallbackOrigin, va
                     data-provenance={a.kind}
                     className={cn(
                         'min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        inline ? 'inline-flex text-sm' : 'flex',
+                        inline ? 'inline-flex max-w-full text-sm' : 'flex max-w-full',
                         className,
                     )}
                 >
