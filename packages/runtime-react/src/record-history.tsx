@@ -12,6 +12,7 @@
 
 import * as React from 'react'
 import { useSystemActor } from './org-runtime-context'
+import { parseProvenance, ProvenanceActorChip } from './provenance'
 import { formatDistanceToNow } from 'date-fns'
 import { es, enUS } from 'date-fns/locale'
 import { ChevronDown, ChevronRight, Clock, ExternalLink } from 'lucide-react'
@@ -167,6 +168,7 @@ export const RecordHistory: React.FC<RecordHistoryProps> = ({
                     const isOpen = openIds.has(event.id)
                     const dotColor = actionDotColor(event.action)
                     const actor = event.actor_label || event.actor_id || systemName
+                    const prov = parseProvenance(event.provenance)
                     const timeAgo = (() => {
                         try {
                             return formatDistanceToNow(new Date(event.occurred_at), { addSuffix: true, locale: dateLocale })
@@ -205,6 +207,7 @@ export const RecordHistory: React.FC<RecordHistoryProps> = ({
                                         >
                                             {/* Actor avatar — the photo when the event carries one,
                                                 initials otherwise */}
+                                            {prov ? null : (
                                             <Avatar className="h-7 w-7 rounded-full shrink-0">
                                                 {event.actor_avatar ? (
                                                     <AvatarImage
@@ -216,12 +219,20 @@ export const RecordHistory: React.FC<RecordHistoryProps> = ({
                                                     {getInitials(actor)}
                                                 </AvatarFallback>
                                             </Avatar>
+                                            )}
 
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="text-sm font-semibold text-foreground truncate">
-                                                        {actor}
-                                                    </span>
+                                                    {prov ? (
+                                                        <ProvenanceActorChip
+                                                            provenance={prov}
+                                                            person={{ name: event.actor_label ?? undefined, avatar: event.actor_avatar ?? undefined }}
+                                                        />
+                                                    ) : (
+                                                        <span className="text-sm font-semibold text-foreground truncate">
+                                                            {actor}
+                                                        </span>
+                                                    )}
                                                     <span className="text-sm text-muted-foreground">
                                                         {actionLabel(event.action)}
                                                     </span>

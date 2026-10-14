@@ -15,6 +15,7 @@
 
 import * as React from 'react'
 import { useSystemActor } from './org-runtime-context'
+import { parseProvenance, ProvenanceAvatar, useResolvedAuthorship } from './provenance'
 import { formatDistanceToNow } from 'date-fns'
 import { es, enUS } from 'date-fns/locale'
 import type { Locale } from 'date-fns'
@@ -203,7 +204,11 @@ const GroupCard: React.FC<GroupCardProps> = ({
     const { root, events, changedFieldCount } = group
     const isMulti = events.length > 1
     const systemName = useSystemActor()?.name || 'Sistema'
-    const actor = root.actor_label || root.actor_id || systemName
+    const authorship = useResolvedAuthorship({
+        provenance: parseProvenance(root.provenance),
+        person: root.actor_label ? { name: root.actor_label } : undefined,
+    })
+    const actor = authorship?.label || root.actor_label || root.actor_id || systemName
     const dotColor = actionDotColor(root.action)
 
     const timeAgo = (() => {
@@ -247,11 +252,18 @@ const GroupCard: React.FC<GroupCardProps> = ({
                             type="button"
                             className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
                         >
+                            {authorship ? (
+                                <span className="mt-0.5 shrink-0" title={authorship.description}>
+                                    <ProvenanceAvatar authorship={authorship} size="sm" />
+                                    <span className="sr-only">{authorship.description}</span>
+                                </span>
+                            ) : (
                             <Avatar className="h-7 w-7 rounded-full shrink-0 mt-0.5">
                                 <AvatarFallback className="text-[9px] font-bold bg-primary/10 text-primary">
                                     {getInitials(actor)}
                                 </AvatarFallback>
                             </Avatar>
+                            )}
 
                             <div className="flex-1 min-w-0">
                                 {/* Summary line */}

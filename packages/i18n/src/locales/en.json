@@ -200,5 +200,34 @@
     "source_loaded_partial_one": "{{count}} line with what is left · {{covered}} already complete (skipped)",
     "source_loaded_partial_other": "{{count}} lines with what is left · {{covered}} already complete (skipped)",
     "source_all_covered": "That document is already fully recorded; nothing is pending."
+  },
+  "provenance": {
+    "system": "System",
+    "agent": "Assistant",
+    "user": "User",
+    "with": "{{person}} with {{agent}}",
+    "proposedBy": "Proposed by {{agent}}",
+    "pending": "Pending proposal",
+    "authorizedBy": "Authorized by: {{person}}",
+    "onBehalfOf": "On behalf of {{person}}",
+    "proposal": "{{agent}} proposed: {{summary}}",
+    "createdBy": "Created by {{who}}",
+    "via": {
+      "chat": "Chat",
+      "automation": "Automation",
+      "import": "Import",
+      "webhook": "Webhook",
+      "seed": "Initial data",
+      "migration": "Migration",
+      "job": "Scheduled job",
+      "event": "Event",
+      "ui": "Manual",
+      "api": "API"
+    },
+    "mode": {
+      "manual": "Manual",
+      "assisted": "Assisted",
+      "automated": "Automated"
+    }
   }
 }

@@ -35,6 +35,11 @@ export interface ActivityEvent {
     correlation_id?: string | null
     actor_id?: string | null
     actor_label?: string | null
+    /**
+     * Provenance of the change (kernel `provenance`, JSON string or object):
+     * person, agent, system or integration, and the mode. Optional.
+     */
+    provenance?: unknown
     /** Storage path of the actor's avatar image, when the backend resolves one. */
     actor_avatar?: string | null
     addon_key: string

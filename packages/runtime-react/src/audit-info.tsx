@@ -25,6 +25,7 @@ import { formatDateCell } from './dynamic-columns'
 import { objectLabel } from './dynamic-relation-helpers'
 import { isNilUuid } from './nil-uuid'
 import { useSystemActor, useTimeZone } from './org-runtime-context'
+import { readProvenance, useResolvedAuthorship } from './provenance'
 import type { AuditMeta } from './types'
 
 /** The kernel's actor for unattended work (schedules, webhooks, connectors). */
@@ -129,6 +130,8 @@ export interface AuditInfoProps {
 interface Line {
     key: string
     text: string
+    /** Full provenance sentence (who authorized, what the agent proposed). */
+    detail?: string
     absolute: string
     title?: string
     relative: string
@@ -147,6 +150,8 @@ export function AuditInfo({
     const ctxTz = useTimeZone()
     const systemActor = useSystemActor()
     const [open, setOpen] = React.useState(defaultOpen)
+    // Stored creation provenance (person with agent, agent, system, integration).
+    const authorship = useResolvedAuthorship({ provenance: readProvenance(record ?? undefined) })
 
     const meta = readAuditMeta(audit)
     if (!meta || !record) return null
@@ -170,6 +175,16 @@ export function AuditInfo({
         const actor = resolveAuditActor(record, byCol, { resolveActor, systemLabel: systemActor?.name || tt('system') })
         const date = new Date(record[atCol as string] as string)
         const relative = formatDistanceToNow(date, { addSuffix: true, locale: dfLocale })
+        if (key === 'created' && authorship) {
+            return {
+                key,
+                text: tt(whoKey, { who: authorship.label }),
+                detail: authorship.description,
+                absolute: f.display,
+                title: f.title,
+                relative,
+            }
+        }
         return {
             key,
             text: actor ? tt(whoKey, { who: actor.name }) : tt(whenKey),
@@ -207,7 +222,8 @@ export function AuditInfo({
                 <ul className="mt-2 space-y-1 pl-6">
                     {lines.map(l => (
                         <li key={l.key} data-audit-line={l.key}>
-                            <span>{l.text}</span>
+                            <span title={l.detail}>{l.text}</span>
+                            {l.detail ? <span className="sr-only"> ({l.detail})</span> : null}
                             {' · '}
                             <time title={l.title}>{l.absolute}</time>
                             <span className="opacity-70"> ({l.relative})</span>

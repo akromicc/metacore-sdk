@@ -370,6 +370,7 @@ export {
     type SidebarLayoutManagerProps,
 } from './sidebar-layout-manager'
 export * from './org-runtime-context'
+export * from './provenance'
 export * from './business'
 // Primitivos de negocio (PaymentAllocator, AgingTable, ApprovalInbox,
 // contribuciones/modales federados, tipos de documento y contratos de paneles).

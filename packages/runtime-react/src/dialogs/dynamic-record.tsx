@@ -89,6 +89,7 @@ import type { ActionFieldDef, RelationMeta } from '../types'
 import { ImageUrlContext, identityImageUrl, type GetImageUrl } from '../image-url-context'
 import { getFieldWidget, useFieldWidgetRegistryVersion } from '../field-widget-registry'
 import { TimeZoneContext, CurrencyContext, useNumberLocale, useSystemActor } from '../org-runtime-context'
+import { AuthorshipCell, hasSpecialAuthorship, readProvenance } from '../provenance'
 
 // Re-export the resolver type so `index.ts`'s
 // `export type { … GetImageUrl } from './dialogs/dynamic-record'` keeps working.
@@ -1694,10 +1695,13 @@ export function ViewValue({
     getImageUrl: getImageUrlProp,
     timeZone: timeZoneProp,
     currency: currencyProp,
+    model,
 }: {
     field: FieldDef
     value: any
     record: any
+    /** Model key; lets the host origin resolver name legacy system rows. */
+    model?: string
     /** Optional override; when omitted falls back to the nearest provider/identity. */
     getImageUrl?: GetImageUrl
     /** Optional override; when omitted falls back to the nearest provider. */
@@ -1731,6 +1735,20 @@ export function ViewValue({
         field.key === 'created_by' ||
         field.key === 'created_by_id'
     ) {
+        const isCreatedByField =
+            field.key === 'created_by' ||
+            field.key === 'created_by_id' ||
+            (typeof field.key === 'string' && field.key.startsWith('created_by.')) ||
+            renderAs === 'creator'
+        // Provenance: person with the agent, the agent alone, the system or an
+        // integration with its origin (kernel `provenance`).
+        if (isCreatedByField && (hasSpecialAuthorship(record) || readProvenance(record))) {
+            return (
+                <div className="py-1">
+                    <AuthorshipCell row={record} model={model} variant="inline" />
+                </div>
+            )
+        }
         const user = createdBySibling(rawValue, record)
         if (user) {
             return (
