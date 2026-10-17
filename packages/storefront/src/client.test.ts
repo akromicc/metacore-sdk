@@ -177,4 +177,13 @@ describe('helpers', () => {
     expect(isTokenPublishable('sk_live_1')).toBe(false)
     expect(isTokenPublishable(undefined)).toBe(false)
   })
+
+  it('reads payment methods of a cart', async () => {
+    const { calls, fetch } = recorder(() => Response.json({ methods: [{ key: 'manual', kind: 'builtin', default: true }], market: 'mx' }))
+    const sf = createStorefrontClient({ ...base, fetch })
+    const res = await sf.carts.paymentMethods('c 1')
+    expect(res.methods[0]!.key).toBe('manual')
+    expect(res.market).toBe('mx')
+    expect(calls[0]!.url).toMatch(/\/storefront\/carts\/c%201\/payment-methods$/)
+  })
 })

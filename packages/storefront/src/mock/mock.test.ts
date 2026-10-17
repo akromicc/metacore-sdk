@@ -131,6 +131,8 @@ describe('mock end-to-end purchase', () => {
     const options = await pub.carts.deliveryOptions(cart.id)
     expect(options.rates[0]).toMatchObject({ id: 'flat', cost: { amount: '0.00' } }) // free over 999
     expect(options.pickup.map((p) => p.branch_id)).toEqual(['br_centro', 'br_norte'])
+    expect(options).toMatchObject({ partial: false, unavailable: [] })
+    expect(await pub.carts.paymentMethods(cart.id)).toEqual({ methods: [{ key: 'mock', kind: 'builtin', default: true }], market: null })
     cart = await pub.carts.setDelivery(cart.id, { method: 'shipping', rate_id: 'express' })
     expect(cart.cost.shipping?.amount).toBe('249.00')
     cart = await pub.carts.setDelivery(cart.id, { method: 'pickup', branch_id: 'br_centro' })
@@ -147,6 +149,9 @@ describe('mock end-to-end purchase', () => {
 
     const after = await sf.stock.get([variant.sku])
     expect(after.nodes[0]!.quantity_available).toBe(14)
+
+    expect(result.checkout.total).toEqual(cart.cost.total)
+    expect(result.checkout.stock_hold_expires_at).toMatch(/^\d{4}-/)
   })
 
   it('rejects over-stock and checkout without delivery', async () => {
@@ -192,5 +197,7 @@ describe('mock customer and content', () => {
     expect(articles.nodes).toHaveLength(2)
     expect(await pub.content.article(articles.nodes[0]!.handle)).not.toBeNull()
     expect(await pub.content.article('nope')).toBeNull()
+    await expect(pub.content.articles({ first: 51 })).rejects.toMatchObject({ status: 400 })
+    await expect(pub.content.articles({ first: 50 })).resolves.toBeTruthy()
   })
 })

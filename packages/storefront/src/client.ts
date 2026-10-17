@@ -27,6 +27,7 @@ import type {
   CustomerSessionInput,
   DeliveryInput,
   DeliveryOptions,
+  PaymentMethods,
   InvoiceRequest,
   InvoiceResult,
   Menu,
@@ -340,6 +341,9 @@ export function createStorefrontClient(config: StorefrontClientOptions) {
         write<Cart>('PUT', cartPath(id, '/shipping-address'), address, options),
       deliveryOptions: (id: string, options?: RequestOptions) =>
         get<DeliveryOptions>(cartPath(id, '/delivery-options'), undefined, options),
+      /** Payment providers active for the cart's market; send the chosen `key` as `payment_method`. */
+      paymentMethods: (id: string, options?: RequestOptions) =>
+        get<PaymentMethods>(cartPath(id, '/payment-methods'), undefined, options),
       setDelivery: (id: string, delivery: DeliveryInput, options?: WriteOptions) =>
         write<Cart>('PUT', cartPath(id, '/delivery'), delivery, options),
       /** Reserves stock and creates the order. Sends `Idempotency-Key` (auto-generated if omitted). */
