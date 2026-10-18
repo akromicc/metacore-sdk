@@ -2,9 +2,9 @@ import type { CSSProperties } from 'react'
 import { luminance, resolveSwatchSpec, swatchBackground, type SwatchSpec } from './swatch-colors'
 
 export type SwatchProps = {
-  /** Nombre de la variante ("Azul marino", "Rojo / Negro", "Fresa Kiwi"). Se resuelve a color solo. */
+  /** Nombre de la variante; se resuelve con los colores básicos del SDK. Para vocabulario propio resuelve tú con `createSwatchResolver` y pasa `spec`. */
   value?: string
-  /** Lo que el catálogo dice de esta variante (color(es) o emoji). Manda sobre el nombre: ver `parseSwatchAttribute`. */
+  /** Lo que se dibuja (color(es) o emoji), ya resuelto: del catálogo (`parseSwatchAttribute`) o de tu `createSwatchResolver`. Manda sobre `value`. */
   spec?: SwatchSpec | null
   size?: number
   shape?: 'circle' | 'square'
@@ -23,8 +23,17 @@ export function Swatch({ value = '', spec, size = 20, shape = 'circle', classNam
   const colors = resolved.colors
   if (!colors) {
     // Emoji: la forma la pone el sistema; solo se centra en una baldosa neutra del tamaño de las muestras de color.
+    // Mezcla ("🍓🍦"): la muestra se ensancha a una píldora y cada emoji se achica para que sigan leyéndose juntos.
+    const count = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(resolved.emoji)].length
     return (
-      <span aria-hidden="true" data-swatch="" data-kind="emoji" data-shape={shape} className={className || undefined} style={{ width: size, height: size, fontSize: Math.round(size * 0.72) }}>
+      <span
+        aria-hidden="true"
+        data-swatch=""
+        data-kind="emoji"
+        data-shape={shape}
+        className={className || undefined}
+        style={{ minWidth: size, height: size, fontSize: Math.round(size * (count > 1 ? 0.6 : 0.78)) }}
+      >
         {resolved.emoji}
       </span>
     )

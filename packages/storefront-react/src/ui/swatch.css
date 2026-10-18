@@ -31,9 +31,14 @@
     box-shadow: none;
   }
 }
+/* Emoji: sin fondo (el emoji ya es la muestra); con varios, se alinean en fila con poco aire. */
 [data-swatch][data-kind="emoji"] {
-  display: inline-grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.05em;
   line-height: 1;
-  background: var(--tint, color-mix(in srgb, currentColor 8%, transparent));
+  white-space: nowrap;
+  background: none;
+  border-radius: 0;
 }
