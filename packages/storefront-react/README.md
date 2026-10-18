@@ -410,3 +410,17 @@ cabe. El suplemento base ya lo usa (`CREATINA MONOHIDRATADA` ya no queda en
 | `defineSection`, `SectionRegistry`, `createSectionRegistry`, `Sections`, `resolveSectionProps`, `sectionJsonSchema` | Content sections |
 | `themeToCss`, `themeToCssVariables`, `ThemeStyle`, `themeFontsHref`, `tokenName` | SSR theme |
 | `ProductImage`, `ProductMockup`, `MockupProvider`, `createMockupRegistry`, `registerMockup`, `BUILTIN_MOCKUPS`, `MockupFrame`, `MockupText`, `TireMockup`, `PartMockup`, `SupplementMockup`, `GenericMockup` | Mockups de respaldo (subpath `/mockups`) |
+
+## `@asteby/storefront-react/ui`
+
+Piezas de interfaz de tienda, sin dependencia de router. Importa los estilos una vez (`import '@asteby/storefront-react/ui.css'`)
+y define los tokens `--background --foreground --border --tint --primary --primary-foreground --ring`.
+
+| Pieza | Para qué |
+|---|---|
+| `Select` | Selector con teclado completo y tema claro/oscuro; sin JavaScript es un `<select>` nativo. |
+| `Swatch` | Muestra 2D plana de una variante: color, combinación (partes iguales) o emoji. Aro del color primario solo si el color se pierde con el fondo. |
+| `parseSwatchAttribute` / `resolveSwatchSpec` | El catálogo manda: atributo `"Nombre:#hex\|Nombre:#hex+#hex\|Nombre:🍓"`; si no hay dato, se resuelve por nombre (colores y sabores en español e inglés). |
+| `ThemeToggle`, `THEME_INIT_SCRIPT` | Claro/oscuro con `html[data-theme]` y localStorage, sin parpadeo. |
+| `InstallApp`, `useServiceWorker` | Instalación PWA (Android/Chrome y pista para iOS) y registro del service worker. |
+| `.select`, `.check`, `.radio` | Controles de formulario con los tokens de la tienda. |
