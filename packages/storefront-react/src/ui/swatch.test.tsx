@@ -32,6 +32,7 @@ describe('resolveSwatch', () => {
   it('optionHasSwatches exige que todos los valores tengan color', () => {
     expect(optionHasSwatches(['Rojo', 'Negro', 'Rojo / Blanco'])).toBe(true)
     expect(optionHasSwatches(['Rojo', 'XL'])).toBe(false)
+    expect(optionHasSwatches(['Rojo', 'XL'], parseSwatchAttribute('XL:🧢'))).toBe(true)
   })
 })
 

@@ -72,9 +72,9 @@ export function resolveSwatch(value: string): string[] | null {
   return colors.length > 0 ? colors.slice(0, MAX_COLORS) : null;
 }
 
-/** ¿Todos los valores de una opción tienen muestra? Solo entonces conviene dibujar el selector con colores. */
-export function optionHasSwatches(values: string[]): boolean {
-  return values.length > 0 && values.every((v) => resolveSwatch(v) !== null);
+/** ¿Todos los valores de una opción tienen muestra (por el catálogo o por nombre)? Solo entonces conviene dibujar el selector con colores. */
+export function optionHasSwatches(values: string[], attribute?: Map<string, SwatchSpec>): boolean {
+  return values.length > 0 && values.every((v) => resolveSwatchSpec(v, attribute) !== null)
 }
 
 /** Fondo CSS plano: un color liso, dos mitades, o sectores iguales (hasta 4). */
