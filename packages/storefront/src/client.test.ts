@@ -9,6 +9,7 @@ import {
   parseMoney,
   parseProductFilters,
   productListQuery,
+  storefrontDomainHeader,
 } from './index.js'
 
 type Call = { url: string; init: RequestInit & { headers: Headers } }
@@ -266,5 +267,27 @@ describe('shopper IP (X-Storefront-Client-IP)', () => {
     expect(normalizeClientIp('[2001:db8::1]')).toBe('2001:db8::1')
     expect(normalizeClientIp('::ffff:203.0.113.7')).toBe('::ffff:203.0.113.7')
     expect(normalizeClientIp(' 203.0.113.7 ')).toBe('203.0.113.7')
+  })
+})
+
+describe('domain and market', () => {
+  it('sends X-Storefront-Domain with the host, and host#market when a market is given', async () => {
+    const { calls, fetch } = recorder()
+    await createStorefrontClient({ ...base, fetch, domain: 'godsnutrition.com' }).shop.get()
+    await createStorefrontClient({ ...base, fetch, domain: 'godsnutrition.com', market: 'US' }).shop.get()
+    expect(calls[0]!.init.headers.get('X-Storefront-Domain')).toBe('godsnutrition.com')
+    expect(calls[1]!.init.headers.get('X-Storefront-Domain')).toBe('godsnutrition.com#us')
+  })
+
+  it('sends nothing without a domain (a market alone cannot be scoped)', async () => {
+    const { calls, fetch } = recorder()
+    await createStorefrontClient({ ...base, fetch, market: 'us' }).shop.get()
+    expect(calls[0]!.init.headers.has('X-Storefront-Domain')).toBe(false)
+  })
+
+  it('drops an invalid market code instead of sending it', () => {
+    expect(storefrontDomainHeader('godsnutrition.com', 'us mx')).toBe('godsnutrition.com')
+    expect(storefrontDomainHeader('godsnutrition.com', '')).toBe('godsnutrition.com')
+    expect(storefrontDomainHeader(' godsnutrition.com ', ' MX ')).toBe('godsnutrition.com#mx')
   })
 })

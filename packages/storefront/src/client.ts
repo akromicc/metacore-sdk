@@ -79,6 +79,18 @@ export type StorefrontClientOptions = {
   fetch?: FetchLike
   /** Sent as `Accept-Language`. */
   locale?: string
+  /**
+   * Public host of the storefront (`godsnutrition.com`), sent as `X-Storefront-Domain`. Platform (`pt_`)
+   * tokens need it to pick the organization; with an org-scoped token it only scopes the market.
+   */
+  domain?: string
+  /**
+   * Market the request is for (`mx`, `us`), sent as `<domain>#<market>` in `X-Storefront-Domain`. It lets ONE
+   * public domain serve several markets (the storefront routes by path prefix, e.g. `/us`): OPS honors it
+   * when the organization has that market active and otherwise falls back to the domain's own market.
+   * Ignored without `domain`.
+   */
+  market?: string
   /** Extra headers on every request. */
   headers?: Record<string, string>
   /**
@@ -246,6 +258,7 @@ export function createStorefrontClient(config: StorefrontClientOptions) {
     headers.set('Accept', 'application/json')
     headers.set('Authorization', `Bearer ${config.token}`)
     if (config.locale) headers.set('Accept-Language', config.locale)
+    if (config.domain) headers.set('X-Storefront-Domain', storefrontDomainHeader(config.domain, config.market))
     const customerToken = options.customerToken !== undefined ? options.customerToken : config.customerToken
     if (customerToken) headers.set('X-Customer-Token', customerToken)
     const clientIp = options.clientIp !== undefined ? options.clientIp : config.clientIp
@@ -482,3 +495,10 @@ export function createStorefrontClient(config: StorefrontClientOptions) {
 }
 
 export type StorefrontClient = ReturnType<typeof createStorefrontClient>
+
+/** `X-Storefront-Domain` value: the host, plus `#<market>` when a valid market code is given. */
+export function storefrontDomainHeader(domain: string, market?: string | null): string {
+  const host = domain.trim()
+  const code = (market ?? '').trim().toLowerCase()
+  return code && /^[a-z0-9_-]{1,32}$/.test(code) ? `${host}#${code}` : host
+}
