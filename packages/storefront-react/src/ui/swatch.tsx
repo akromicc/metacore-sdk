@@ -23,8 +23,9 @@ export function Swatch({ value = '', spec, size = 20, shape = 'circle', classNam
   const colors = resolved.colors
   if (!colors) {
     // Emoji: la forma la pone el sistema; solo se centra en una baldosa neutra del tamaño de las muestras de color.
-    // Mezcla ("🍓🍦"): la muestra se ensancha a una píldora y cada emoji se achica para que sigan leyéndose juntos.
-    const count = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(resolved.emoji)].length
+    // Mezcla ("🍓🍦"): los emoji se montan un poco, el primero arriba, y se leen como una sola muestra.
+    const parts = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(resolved.emoji)].map((g) => g.segment)
+    const mixed = parts.length > 1
     return (
       <span
         aria-hidden="true"
@@ -32,9 +33,13 @@ export function Swatch({ value = '', spec, size = 20, shape = 'circle', classNam
         data-kind="emoji"
         data-shape={shape}
         className={className || undefined}
-        style={{ minWidth: size, height: size, fontSize: Math.round(size * (count > 1 ? 0.6 : 0.78)) }}
+        style={{ minWidth: size, height: size, fontSize: Math.round(size * (mixed ? 0.72 : 0.84)) }}
       >
-        {resolved.emoji}
+        {parts.map((emoji, i) => (
+          <span key={`${emoji}-${i}`} style={i > 0 ? { marginInlineStart: '-0.34em', zIndex: parts.length - i } : { zIndex: parts.length }}>
+            {emoji}
+          </span>
+        ))}
       </span>
     )
   }

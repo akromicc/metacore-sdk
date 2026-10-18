@@ -36,9 +36,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.05em;
+  gap: 0;
   line-height: 1;
   white-space: nowrap;
   background: none;
   border-radius: 0;
+}
+[data-swatch][data-kind="emoji"] > span {
+  position: relative;
+  display: inline-block;
 }
