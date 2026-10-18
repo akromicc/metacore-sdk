@@ -23,7 +23,8 @@ export function Swatch({ value = '', spec, size = 20, shape = 'circle', classNam
   const colors = resolved.colors
   if (!colors) {
     // Emoji: la forma la pone el sistema; solo se centra en una baldosa neutra del tamaño de las muestras de color.
-    // Mezcla ("🍓🍦"): los emoji se montan un poco, el primero arriba, y se leen como una sola muestra.
+    // Cada sabor va en su propio círculo (uno) o píldora (mezcla), con fondo suave tipo badge: así se ve qué emoji forman un grupo.
+    // En la mezcla los emoji se montan un poco, el primero arriba.
     const parts = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(resolved.emoji)].map((g) => g.segment)
     const mixed = parts.length > 1
     return (
@@ -31,12 +32,13 @@ export function Swatch({ value = '', spec, size = 20, shape = 'circle', classNam
         aria-hidden="true"
         data-swatch=""
         data-kind="emoji"
+        data-mixed={mixed || undefined}
         data-shape={shape}
         className={className || undefined}
-        style={{ minWidth: size, height: size, fontSize: Math.round(size * (mixed ? 0.72 : 0.84)) }}
+        style={{ minWidth: size, height: size, fontSize: Math.round(size * (mixed ? 0.56 : 0.6)) }}
       >
         {parts.map((emoji, i) => (
-          <span key={`${emoji}-${i}`} style={i > 0 ? { marginInlineStart: '-0.34em', zIndex: parts.length - i } : { zIndex: parts.length }}>
+          <span key={`${emoji}-${i}`} style={i > 0 ? { marginInlineStart: '-0.3em', zIndex: parts.length - i } : { zIndex: parts.length }}>
             {emoji}
           </span>
         ))}

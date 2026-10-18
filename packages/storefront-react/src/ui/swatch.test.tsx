@@ -109,6 +109,6 @@ describe('<Swatch>', () => {
     const mix = renderToString(<Swatch spec={{ emoji: '🍓🍦' }} />)
     expect(mix.indexOf('🍓')).toBeGreaterThan(-1)
     expect(mix.indexOf('🍦')).toBeGreaterThan(mix.indexOf('🍓'))
-    expect(mix).toContain('margin-inline-start:-0.34em')
+    expect(mix).toContain('margin-inline-start:-0.3em')
   })
 })

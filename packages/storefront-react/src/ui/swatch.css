@@ -31,16 +31,23 @@
     box-shadow: none;
   }
 }
-/* Emoji: sin fondo (el emoji ya es la muestra); con varios, se alinean en fila con poco aire. */
+/*
+ * Emoji: cada sabor en su círculo (uno) o píldora (mezcla), con fondo suave del color de superficie (--tint) y un aro fino,
+ * como un badge. Así, en una fila de sabores se distingue qué emoji forman cada grupo.
+ */
 [data-swatch][data-kind="emoji"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0;
+  box-sizing: border-box;
   line-height: 1;
   white-space: nowrap;
-  background: none;
-  border-radius: 0;
+  border-radius: 9999px;
+  background: var(--tint, color-mix(in srgb, currentColor 10%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent);
+}
+[data-swatch][data-kind="emoji"][data-mixed] {
+  padding-inline: 0.42em;
 }
 [data-swatch][data-kind="emoji"] > span {
   position: relative;
