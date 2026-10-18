@@ -43,7 +43,8 @@
     "./contrast": {
       "types": "./dist/contrast.d.ts",
       "import": "./dist/contrast.js"
-    }
+    },
+    "./scrollbars.css": "./styles/scrollbars.css"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

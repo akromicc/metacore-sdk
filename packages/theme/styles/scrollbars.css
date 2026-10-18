@@ -1,0 +1,37 @@
+/*
+ * Scroll moderno compartido (admin de ops, SDK y tiendas): barras delgadas, redondeadas y del color del texto del
+ * contexto (currentColor), así funcionan en claro y oscuro con cualquier sistema de tokens sin definir colores nuevos.
+ * Estándar en Chrome 121+/Firefox (scrollbar-width/color); prefijo WebKit para Safari. Las listas internas y los diálogos
+ * no arrastran la página de fondo al llegar a su límite (overscroll-behavior).
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, currentColor 32%, transparent) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, currentColor 32%, transparent);
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, currentColor 55%, transparent);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+dialog,
+[role='dialog'],
+[role='listbox'],
+[data-radix-scroll-area-viewport],
+.overflow-y-auto,
+.overflow-x-auto {
+  overscroll-behavior: contain;
+}
