@@ -26,5 +26,8 @@ export type {
   QueryValue,
 } from './query.js'
 
+export { COUNTRY_HEADERS, hreflangLinks, negotiateLocale, preferredLanguages, suggestMarket, visitorCountry } from './market.js'
+export type { MarketInfo, MarketSuggestion } from './market.js'
+
 export type { GeoPoint, OpeningHours, OpenStatus } from './geo.js'
 export type * from './types.js'
