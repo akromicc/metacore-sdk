@@ -7,6 +7,7 @@ export {
   normalize as normalizeSwatchName,
   optionHasSwatches,
   parseSwatchAttribute,
+  pastelBackground,
   resolveSwatch,
   resolveSwatchSpec,
   swatchBackground,

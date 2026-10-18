@@ -45,6 +45,12 @@
   border-radius: 9999px;
   background: var(--tint, color-mix(in srgb, currentColor 10%, transparent));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent);
+  color: inherit;
+}
+/* Con colores del sabor: píldora pastel clara (el emoji siempre contrasta, también en tema oscuro) y aro del color principal. */
+[data-swatch][data-kind="emoji"][data-colored] {
+  color: #111111;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sw-ring) 42%, transparent);
 }
 [data-swatch][data-kind="emoji"][data-mixed] {
   padding-inline: 0.42em;

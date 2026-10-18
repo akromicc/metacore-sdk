@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { renderToString } from 'react-dom/server'
-import { createSwatchResolver, defaultColors, optionHasSwatches, parseSwatchAttribute, resolveSwatch, resolveSwatchSpec, swatchBackground } from './swatch-colors'
+import { createSwatchResolver, defaultColors, optionHasSwatches, parseSwatchAttribute, pastelBackground, resolveSwatch, resolveSwatchSpec, swatchBackground } from './swatch-colors'
 import { Swatch } from './swatch'
 
 describe('colores básicos', () => {
@@ -110,5 +110,36 @@ describe('<Swatch>', () => {
     expect(mix.indexOf('🍓')).toBeGreaterThan(-1)
     expect(mix.indexOf('🍦')).toBeGreaterThan(mix.indexOf('🍓'))
     expect(mix).toContain('margin-inline-start:-0.3em')
+  })
+})
+
+describe('badge de color + emoji (prefer: both)', () => {
+  const resolver = createSwatchResolver({
+    colors: [...defaultColors, ['fresa', '#ff4d6d'], ['crema', '#f4ead2']],
+    emojis: [['fresa', '🍓'], ['crema', '🍦']],
+    prefer: 'both',
+  })
+  it('devuelve colores y emoji juntos cuando hay de ambos', () => {
+    expect(resolver.resolve('Fresas con crema')).toEqual({ colors: ['#ff4d6d', '#f4ead2'], emoji: '🍓🍦' })
+  })
+  it('si solo hay uno de los dos, ese', () => {
+    expect(resolver.resolve('Rojo')).toEqual({ colors: ['#e0262d'] })
+  })
+  it('el atributo acepta colores y emoji juntos', () => {
+    const attr = parseSwatchAttribute('Fresas con crema:#ff4d6d+#f4ead2 🍓🍦|Natural:🥛|Rojo:#e0262d')
+    expect(attr.get('fresas con crema')).toEqual({ colors: ['#ff4d6d', '#f4ead2'], emoji: '🍓🍦' })
+    expect(attr.get('natural')).toEqual({ emoji: '🥛' })
+    expect(attr.get('rojo')).toEqual({ colors: ['#e0262d'] })
+  })
+  it('pastelBackground: color mezclado con blanco y degradado suave entre varios', () => {
+    expect(pastelBackground(['#ff4d6d'])).toBe('color-mix(in srgb, #ff4d6d 26%, white)')
+    expect(pastelBackground(['#ff4d6d', '#f4ead2'])).toContain('linear-gradient(100deg')
+  })
+  it('<Swatch> dibuja la píldora pastel con emoji encima', () => {
+    const html = renderToString(<Swatch spec={{ colors: ['#ff4d6d', '#f4ead2'], emoji: '🍓🍦' }} />)
+    expect(html).toContain('data-colored')
+    expect(html).toContain('data-mixed')
+    expect(html).toContain('color-mix(in srgb, #ff4d6d 26%, white)')
+    expect(html).toContain('🍓')
   })
 })

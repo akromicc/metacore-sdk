@@ -6,8 +6,11 @@
  * como atributo (`parseSwatchAttribute`), que siempre manda sobre cualquier diccionario.
  */
 
-/** Lo que dibuja una muestra: uno o más colores planos, o uno o más emoji. */
-export type SwatchSpec = { colors: string[]; emoji?: undefined } | { emoji: string; colors?: undefined }
+/**
+ * Lo que dibuja una muestra: colores planos, emoji, o AMBOS (una píldora pastel con la mezcla de colores y los emoji encima).
+ * Al menos uno de los dos viene lleno.
+ */
+export type SwatchSpec = { colors?: string[]; emoji?: string }
 
 /** [frase normalizada (minúsculas, sin acentos), un color hex o varios] */
 export type ColorEntry = [phrase: string, color: string | string[]]
@@ -15,7 +18,7 @@ export type ColorEntry = [phrase: string, color: string | string[]]
 export type EmojiEntry = [phrase: string, emoji: string]
 
 /** Qué dibujar primero cuando hay color y emoji para el mismo nombre. */
-export type SwatchPrefer = 'auto' | 'color' | 'emoji'
+export type SwatchPrefer = 'auto' | 'color' | 'emoji' | 'both'
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
 const HEX_IN_TEXT = /#(?:[0-9a-f]{6}|[0-9a-f]{3})\b/gi
@@ -71,7 +74,7 @@ export type SwatchResolverOptions = {
   colors?: ColorEntry[]
   /** Diccionario de emoji (sin default: es vocabulario del giro). */
   emojis?: EmojiEntry[]
-  /** Qué dibujar primero si hay color y emoji (default `auto` = color). */
+  /** Qué dibujar si hay color y emoji: `auto`/`color` = color primero, `emoji` = emoji primero, `both` = píldora pastel con colores y emoji. */
   prefer?: SwatchPrefer
 }
 
@@ -105,6 +108,7 @@ export function createSwatchResolver({ colors: colorTable = defaultColors, emoji
     if (fromCatalog) return fromCatalog
     const c = colors(value)
     const e = emoji(value)
+    if (prefer === 'both' && c && e) return { colors: c, emoji: e }
     if (prefer === 'emoji') return e ? { emoji: e } : c ? { colors: c } : null
     if (prefer === 'color') return c ? { colors: c } : e ? { emoji: e } : null
     return c ? { colors: c } : e ? { emoji: e } : null
@@ -122,7 +126,7 @@ export const optionHasSwatches = basic.hasSwatches
 
 /**
  * Atributo del producto con el color o emoji de cada variante, como lo siembra el catálogo (OPS):
- * `"Mora Azul:#3d4fd6|Fresa Kiwi:#ff4d6d+#8bc34a|Natural:🥛"`. Cada valor es un hex, varios hex con "+" (combinación) o emoji.
+ * `"Mora Azul:#3d4fd6|Fresa Kiwi:#ff4d6d+#8bc34a 🍓🥝|Natural:🥛"`. Cada valor es un hex, varios hex con "+" (combinación), emoji, o colores y emoji juntos.
  * Es la fuente de verdad: manda sobre cualquier diccionario.
  */
 export function parseSwatchAttribute(raw: unknown): Map<string, SwatchSpec> {
@@ -133,9 +137,10 @@ export function parseSwatchAttribute(raw: unknown): Map<string, SwatchSpec> {
     if (i <= 0) continue
     const name = normalize(part.slice(0, i))
     const value = part.slice(i + 1).trim()
-    const colors = value.split('+').map((c) => c.trim())
-    if (colors.length > 0 && colors.every((c) => HEX.test(c))) map.set(name, { colors: colors.slice(0, MAX) })
-    else if (/\p{Extended_Pictographic}/u.test(value)) map.set(name, { emoji: value })
+    const colors = (value.match(HEX_IN_TEXT) ?? []).filter((c) => HEX.test(c)).slice(0, MAX)
+    const emoji = value.replace(HEX_IN_TEXT, '').replace(/[+\s]/g, '')
+    const hasEmoji = emoji.length > 0 && /\p{Extended_Pictographic}/u.test(emoji)
+    if (colors.length > 0 || hasEmoji) map.set(name, { ...(colors.length > 0 ? { colors } : {}), ...(hasEmoji ? { emoji } : {}) })
   }
   return map
 }
@@ -158,4 +163,15 @@ export function luminance(hex: string): number {
     return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
   }
   return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
+}
+
+/**
+ * Fondo pastel de una píldora: cada color mezclado con blanco (queda claro y suave en claro y oscuro), un degradado suave entre
+ * ellos si son varios. Con ese fondo el emoji siempre contrasta.
+ */
+export function pastelBackground(colors: string[]): string {
+  const soft = colors.map((c) => `color-mix(in srgb, ${c} 26%, white)`)
+  const [first = 'transparent', second] = soft
+  if (second === undefined) return first
+  return `linear-gradient(100deg, ${soft.join(', ')})`
 }
