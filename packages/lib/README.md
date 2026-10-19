@@ -48,6 +48,28 @@ try {
 }
 ```
 
+## Money (exact amounts)
+
+`@asteby/metacore-lib/money` is the TypeScript twin of the kernel's `money`
+package: integer minor units in `bigint`, explicit rounding modes, no floats.
+Its behaviour is pinned by `src/__fixtures__/money.golden.json`, a byte-for-byte
+copy of the kernel's `money/testdata/golden.json`.
+
+```ts
+import { MoneyValue, formatMoney, inverseRate } from '@asteby/metacore-lib/money'
+
+const total = MoneyValue.parse('1899.00', 'MXN') // PrecisionError on '1.005'
+total.mulDecimal('0.16').toString() // "303.84"
+MoneyValue.parse('100.00', 'MXN').allocate([1, 1, 1]).map(String) // ["33.34", "33.33", "33.33"]
+MoneyValue.parse('12.33', 'CHF').roundCash().toString() // "12.35"
+
+const usdMxn = { base: 'USD', quote: 'MXN', value: '17.2345' } // MXN per 1 USD
+MoneyValue.parse('100.00', 'USD').convert(usdMxn, 'MXN').toJSON() // { amount: "1723.45", currency_code: "MXN" }
+inverseRate(usdMxn).value // "0.058023151237"
+
+formatMoney({ amount: '1000', currency_code: 'JPY' }, { locale: 'en-US' }) // "¥1,000"
+```
+
 ## Error labels
 
 `handleServerError` accepts an injected `toast` so consumers decide the UI binding, and an optional `labels` map for localization.

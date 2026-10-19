@@ -18,6 +18,30 @@ export {
 } from './currency'
 export type { CurrencyInfo } from './currency'
 
+export {
+  MoneyValue,
+  formatMoney,
+  currencySpec,
+  isoCurrencySpec,
+  isoCurrencyCodes,
+  inverseRate,
+  ROUNDING_MODES,
+  INVERSE_SCALE,
+  MoneyError,
+  CurrencyMismatchError,
+  PrecisionError,
+  OverflowError,
+  InvalidMoneyError,
+} from './money'
+export type {
+  Money,
+  CurrencySpec,
+  RoundingMode,
+  Rate,
+  MoneyErrorCode,
+  FormatMoneyOptions,
+} from './money'
+
 export { handleServerError } from './errors'
 export type { ErrorLabels, ToastLike, LoggerLike } from './errors'
 
