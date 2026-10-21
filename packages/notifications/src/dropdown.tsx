@@ -22,6 +22,7 @@ import { formatNotificationBodyHtml } from './rich-text'
 import {
   moduleLabelFromMeta,
   parseNotificationMeta,
+  resolveAvatarChoice,
   resolveNotificationIcon,
   resolveNotificationTone,
 } from './visual'
@@ -66,14 +67,6 @@ type Locale = Parameters<typeof formatDistanceToNow>[1] extends
 function defaultParseList(body: unknown): NotificationListResult {
   const data = (body as { data?: unknown } | null | undefined)?.data
   return { items: Array.isArray(data) ? data : [] }
-}
-
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return ''
-  const first = parts[0]![0] ?? ''
-  const last = parts.length > 1 ? (parts[parts.length - 1]![0] ?? '') : ''
-  return (first + last).toUpperCase()
 }
 
 function sameId(a: NotificationId, b: NotificationId): boolean {
@@ -1009,15 +1002,13 @@ function NotificationAvatar({
   resolveImageUrl?: (src: string) => string
 }) {
   const [failed, setFailed] = useState(false)
-  const raw = (notification.image || notification.user?.avatar || '').trim()
-  const resolved = raw && !failed ? (resolveImageUrl ? resolveImageUrl(raw) : raw) : ''
-  const showPhoto = Boolean(resolved)
+  const choice = resolveAvatarChoice(notification, failed, resolveImageUrl)
 
-  if (showPhoto) {
+  if (choice.kind === 'image') {
     return (
       <div className='relative shrink-0'>
         <img
-          src={resolved}
+          src={choice.src}
           alt=''
           className='h-7 w-7 rounded-full object-cover'
           onError={() => setFailed(true)}
@@ -1029,14 +1020,13 @@ function NotificationAvatar({
     )
   }
 
-  const initials = notification.user?.name ? initialsOf(notification.user.name) : ''
-  if (initials) {
+  if (choice.kind === 'initials') {
     return (
       <div
         className='flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground'
         aria-hidden
       >
-        {initials}
+        {choice.initials}
       </div>
     )
   }

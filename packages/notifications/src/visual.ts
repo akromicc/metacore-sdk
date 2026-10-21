@@ -206,3 +206,54 @@ export function resolveNotificationVisual(input: {
     meta,
   }
 }
+
+export type AvatarChoice =
+  | { kind: 'image'; src: string }
+  | { kind: 'icon' }
+  | { kind: 'initials'; initials: string }
+
+/**
+ * Which avatar the dropdown paints. Priority:
+ * 1. `image` (unless it already failed to load: `imageFailed`)
+ * 2. explicit icon: a non-empty `icon` or a `metadata.color`
+ * 3. author avatar (`actor`, else `user`)
+ * 4. author initials
+ * 5. icon by type
+ * Pure so it can be tested as a table.
+ */
+export function resolveAvatarChoice(
+  n: {
+    image?: string
+    icon?: string
+    metadata?: string | Record<string, unknown>
+    actor?: { name?: string; avatar?: string }
+    user?: { name?: string; avatar?: string }
+  },
+  imageFailed = false,
+  resolveImageUrl?: (src: string) => string,
+  initialsOf: (name: string) => string = defaultInitials,
+): AvatarChoice {
+  const photo = (raw?: string) => {
+    const t = (raw || '').trim()
+    return t ? (resolveImageUrl ? resolveImageUrl(t) : t) : ''
+  }
+  const image = imageFailed ? '' : photo(n.image)
+  if (image) return { kind: 'image', src: image }
+  const meta = parseNotificationMeta(n.metadata)
+  const color = typeof meta?.color === 'string' && meta.color.trim()
+  if ((typeof n.icon === 'string' && n.icon.trim()) || color) return { kind: 'icon' }
+  const author = n.actor?.name || n.actor?.avatar ? n.actor : n.user
+  const avatar = imageFailed ? '' : photo(author?.avatar)
+  if (avatar) return { kind: 'image', src: avatar }
+  const initials = author?.name ? initialsOf(author.name) : ''
+  if (initials) return { kind: 'initials', initials }
+  return { kind: 'icon' }
+}
+
+function defaultInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return ''
+  const first = parts[0]![0] ?? ''
+  const last = parts.length > 1 ? (parts[parts.length - 1]![0] ?? '') : ''
+  return (first + last).toUpperCase()
+}

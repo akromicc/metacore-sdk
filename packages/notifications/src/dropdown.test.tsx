@@ -537,6 +537,34 @@ describe('UI extensions', () => {
     )
     expect((await screen.findByTestId('av')).textContent).toBe('a')
   })
+
+  it('an explicit icon beats the user initials (user may be the recipient)', async () => {
+    const { client } = fakeClient({
+      data: [item('a', { icon: 'bell', user: { name: 'Usuario Nombre' } })],
+    })
+    renderOpen(<NotificationsDropdown apiClient={client} apiBasePath='/n' />)
+    await screen.findByText('Title a')
+    expect(screen.queryByText('UN')).toBeNull()
+    expect(document.querySelector('[role="menuitem"] svg')).toBeTruthy()
+  })
+
+  it('metadata.color keeps the coloured icon even with user initials', async () => {
+    const { client } = fakeClient({
+      data: [item('a', { metadata: { color: '#ff0000' }, user: { name: 'Usuario Nombre' } })],
+    })
+    renderOpen(<NotificationsDropdown apiClient={client} apiBasePath='/n' />)
+    await screen.findByText('Title a')
+    expect(screen.queryByText('UN')).toBeNull()
+  })
+
+  it('actor initials win over user initials when there is no explicit icon', async () => {
+    const { client } = fakeClient({
+      data: [item('a', { actor: { name: 'Ana Pérez' }, user: { name: 'Usuario Nombre' } })],
+    })
+    renderOpen(<NotificationsDropdown apiClient={client} apiBasePath='/n' />)
+    expect(await screen.findByText('AP')).toBeTruthy()
+    expect(screen.queryByText('UN')).toBeNull()
+  })
 })
 
 describe('richText', () => {

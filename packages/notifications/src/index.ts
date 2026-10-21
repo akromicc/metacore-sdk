@@ -15,6 +15,8 @@ export {
 } from './sse'
 export {
   resolveNotificationVisual,
+  resolveAvatarChoice,
+  type AvatarChoice,
   resolveNotificationIcon,
   resolveNotificationTone,
   moduleLabelFromMeta,

@@ -68,7 +68,7 @@ loading or on a failed request). Only the live-toast id changed (`ntf-<id>`).
 | `fetchUnreadCount` + `unreadPollMs` | Server counter, polled only while the tab is visible (and on becoming visible). `0`/unset = no polling. |
 | `badgeMax`, `triggerAriaLabel(unread)` | Badge cap (default `99` → `99+`) and trigger `aria-label`. |
 | `onIngest(payload, item)` | Called once per NEW live notification (after dedup) — sound, query invalidation, hidden-tab push belong to the host. |
-| `footer`, `closeOnClick`, `renderAvatar`, `item.user` | Extra footer (`ReactNode` or `(close) => ReactNode`), menu close behaviour, custom avatar or `user: { name, avatar }` with initials fallback. |
+| `footer`, `closeOnClick`, `renderAvatar`, `item.user` | Extra footer (`ReactNode` or `(close) => ReactNode`), menu close behaviour, custom avatar, `actor: { name, avatar }` (author, preferred) or `user: { name, avatar }` (author if no `actor`; some APIs return the recipient there). |
 | `richText`, `reloadAfterPermission` | See below; `reloadAfterPermission={false}` skips the page reload after granting push permission. |
 | `showLoadStates` (default `false`) | Opt in to the "loading" and "error + retry" states (`labels.loading / error / retry`). Off, the list shows the usual empty message while loading and after a failed request, as before. |
 
@@ -155,3 +155,11 @@ escaped by React.
 ## License
 
 Apache-2.0
+
+### Avatar priority
+
+The default avatar picks, in order: `image` -> explicit icon (a non-empty
+`icon` or `metadata.color`) -> author avatar (`actor`, else `user`) -> author
+initials -> icon by `type`. An explicit icon wins over initials so system
+notifications whose API row carries the recipient under `user` keep their
+icon and colour instead of showing "UN". Exposed as `resolveAvatarChoice`.

@@ -28,9 +28,16 @@ export interface NotificationItem {
   metadata?: string | Record<string, unknown>
   conversation_id?: string
   /**
-   * Optional author of the notification. Used by the default avatar: when no
-   * `image` is present, `user.avatar` is shown, falling back to the initials
-   * of `user.name`.
+   * Author of the notification (who did it). Takes priority over `user`.
+   * Shown by the default avatar only when the row carries no `image` and no
+   * explicit `icon` / `metadata.color`: first `actor.avatar`, then the
+   * initials of `actor.name`.
+   */
+  actor?: { name?: string; avatar?: string }
+  /**
+   * Compatibility alias: author, if there is no `actor`. Beware that some
+   * APIs return the RECIPIENT under `user`; that is why an explicit `icon`
+   * or `metadata.color` wins over it. Prefer `actor` for new code.
    */
   user?: { name?: string; avatar?: string }
 }
