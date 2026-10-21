@@ -463,8 +463,8 @@ export function applyBranding(
   data: Partial<PlatformBranding>,
   defaults: PlatformBranding = FALLBACK_BRANDING,
 ) {
-  const primaryHex = clean(data.primary_color) ?? clean(defaults.primary_color)
-  const accentHex = clean(data.accent_color) ?? clean(defaults.accent_color)
+  const primaryHex = safeHex(data.primary_color) ?? safeHex(defaults.primary_color)
+  const accentHex = safeHex(data.accent_color) ?? safeHex(defaults.accent_color)
 
   if (primaryHex || accentHex) {
     const vars = generateThemeVars(
@@ -486,21 +486,87 @@ export function applyBranding(
 
 const STORAGE_KEY = 'platform-branding'
 
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+// Only `#RRGGBB` reaches the CSS variables and the stored key; anything else
+// (named colors, `url(...)`, `red;background:...`) is dropped, not escaped.
+function safeHex(v: unknown): string | undefined {
+  const t = typeof v === 'string' ? v.trim() : ''
+  return HEX_COLOR.test(t) ? t : undefined
+}
+
+const COLOR_KEYS = ['primary_color', 'accent_color'] as const
+
+/**
+ * Normalizes an untrusted branding payload (localStorage, `window.__BRAND__`):
+ * non-objects yield undefined, colors must be `#RRGGBB`, strings are trimmed,
+ * unknown keys with non-string values are dropped. Never throws.
+ */
+export function sanitizeBranding(raw: unknown): Partial<PlatformBranding> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if ((COLOR_KEYS as readonly string[]).includes(k)) {
+      const hex = safeHex(v)
+      if (hex) out[k] = hex
+    } else if (k === 'agent_suggestions') {
+      if (Array.isArray(v)) out[k] = v.filter((x) => typeof x === 'string')
+    } else if (typeof v === 'string') {
+      out[k] = v
+    }
+  }
+  return out as Partial<PlatformBranding>
+}
+
+/**
+ * Fresh brand the server inlined for this load (`/api/brand/boot.js` sets
+ * `window.__BRAND__`, same field names as PlatformBranding). When present it
+ * is the source of truth for the first frame; whatever localStorage holds is
+ * only an offline fallback.
+ */
+export function readWindowBranding(): Partial<PlatformBranding> | undefined {
+  if (typeof window === 'undefined') return undefined
+  return sanitizeBranding((window as unknown as { __BRAND__?: unknown }).__BRAND__)
+}
+
 function readCachedBranding(storageKey: string): PlatformBranding | undefined {
   if (typeof window === 'undefined') return undefined
   try {
     const cached = window.localStorage.getItem(storageKey)
-    return cached ? (JSON.parse(cached) as PlatformBranding) : undefined
+    return cached ? (sanitizeBranding(JSON.parse(cached)) as PlatformBranding | undefined) : undefined
   } catch {
     // ignore — corrupted JSON or quota errors aren't fatal
     return undefined
   }
 }
 
-// Paint cached branding before React mounts so the initial frame matches the
-// tenant theme. Safe to call on module import — guarded by try/catch and
-// browser-only checks.
+/**
+ * Replaces the stored value of `storageKey` with exactly `branding` (no merge
+ * with what was there: a field the server no longer sends must not survive).
+ */
+export function persistBranding(
+  branding: Partial<PlatformBranding>,
+  storageKey: string = STORAGE_KEY,
+) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(sanitizeBranding(branding) ?? {}))
+  } catch {
+    // ignore quota errors
+  }
+}
+
+// Paint the brand before React mounts so the initial frame matches the
+// tenant theme. `window.__BRAND__` (fresh from the server) wins over the
+// stored value and rewrites it; the stored value is used only when there is
+// no `__BRAND__` (offline). Safe to call on module import.
 export function applyCachedBranding(storageKey: string = STORAGE_KEY) {
+  const fresh = readWindowBranding()
+  if (fresh) {
+    applyBranding(fresh)
+    persistBranding(fresh, storageKey)
+    return
+  }
   const cached = readCachedBranding(storageKey)
   if (cached) applyBranding(cached)
 }
@@ -552,15 +618,16 @@ export function PlatformConfigProvider({
 }: PlatformConfigProviderProps) {
   const queryClient = useQueryClient()
 
-  const { data: branding } = useQuery({
+  const { data: branding, isPlaceholderData } = useQuery({
     // Until the fetch resolves, the branding this browser cached last time:
     // the defaults are another brand's colors on a returning visit.
+    // The server-inlined `__BRAND__` beats the stored copy.
     placeholderData: () => {
-      const cached = readCachedBranding(storageKey)
-      return cached ? mergeBranding(defaults, cached) : undefined
+      const known = readWindowBranding() ?? readCachedBranding(storageKey)
+      return known ? mergeBranding(defaults, known) : undefined
     },
     queryKey: ['platform-branding', storageKey],
-    queryFn: async () => mergeBranding(defaults, await fetcher()),
+    queryFn: async () => mergeBranding(defaults, sanitizeBranding(await fetcher()) ?? {}),
     staleTime,
     retry: 1,
   })
@@ -570,13 +637,11 @@ export function PlatformConfigProvider({
   useEffect(() => {
     if (branding) {
       applyBranding(branding, defaults)
-      try {
-        window.localStorage.setItem(storageKey, JSON.stringify(branding))
-      } catch {
-        // ignore quota errors
-      }
+      // Only a real `/org/branding` response is persisted, and it REPLACES
+      // the stored fields; the placeholder is what was already stored.
+      if (!isPlaceholderData) persistBranding(branding, storageKey)
     }
-  }, [branding, defaults, storageKey])
+  }, [branding, isPlaceholderData, defaults, storageKey])
 
   // The tokens depend on light/dark only; other class changes on <html>
   // (fonts, boot markers) must not repaint them.

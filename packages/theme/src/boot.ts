@@ -96,6 +96,9 @@ function bootTheme(o: Required<ThemeBootScriptOptions> & { lockClass: string; al
     var mode = dark ? 'dark' : 'light'
     root.classList.remove(dark ? 'light' : 'dark')
     root.classList.add(mode)
+    // Effective preference only (cookie, else the OS): never derived from a
+    // stored brand colour, so a stale brand can't flip the first frame.
+    root.style.colorScheme = mode
 
     var raw = localStorage.getItem(o.storageKey)
     var s = raw ? JSON.parse(raw) : null
@@ -116,6 +119,10 @@ function bootTheme(o: Required<ThemeBootScriptOptions> & { lockClass: string; al
     for (var i = 0; i < (s.classes || []).length; i++) {
       if (typeof s.classes[i] === 'string') root.classList.add(s.classes[i])
     }
+    // The server inlined a fresh brand (`window.__BRAND__`): the stored
+    // snapshot's inline vars/stylesheets are brand-derived and possibly
+    // stale, so skip them; the branding provider paints the fresh ones.
+    if ((window as unknown as { __BRAND__?: unknown }).__BRAND__) return
     var ms = s.modes && s.modes[mode]
     if (!ms) return
     for (k in ms.vars) {

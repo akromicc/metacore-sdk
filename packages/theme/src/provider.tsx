@@ -93,6 +93,8 @@ export function ThemeProvider({
     // branding provider repaint its tokens.
     const applyTheme = (current: ResolvedTheme) => {
       const other = current === 'dark' ? 'light' : 'dark'
+      // Same value the pre-paint boot script sets.
+      if (root.style.colorScheme !== current) root.style.colorScheme = current
       if (root.classList.contains(current) && !root.classList.contains(other)) return
       root.classList.remove(other)
       root.classList.add(current)
