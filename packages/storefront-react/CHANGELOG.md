@@ -1,5 +1,18 @@
 # @asteby/storefront-react
 
+## 0.5.0
+
+### Minor Changes
+
+- 7201b08: Componentes de disponibilidad (headless, accesibles, es/en por clave, SSR y sin JavaScript): `AvailabilityBadge` (tarjeta y ficha: «Agotado», «Quedan N», «Bajo pedido», «Preventa»), `VariantOptionState` (opción tachada con «agotado» para lector de pantalla), `RestockNotifyForm` («Avísame», `<form method="post">` que funciona sin JS), `CartLineProblem` y `StockConflictAlert` (409 `insufficient_stock` recuperable: conserva carrito y datos, foco al alert, «Ajustar a N» / «Quitar»), hook `useAvailability`. `AddToCartButton` acepta `availability` / `availabilitySource` (etiqueta del servidor, deshabilitado si no se puede comprar, tope `max_per_order`); `useProductOptions` expone `availability` por valor. `productJsonLd` / `productMeta` publican `schema.org availability` desde el estado del servidor (`LimitedAvailability`, `BackOrder`, `PreOrder` + `availabilityStarts`) con polyfill y sin publicar cantidades.
+- 33f2583: Pago integrado y promociones, en dos subrutas nuevas sin estilos propios. `@asteby/storefront-react/payments`: `PaymentBrick` y hook `useEmbeddedPayment` (carga el SDK con la llave pública del servidor, envía solo el token al servidor de la tienda, estados approved / en revisión / ficha de efectivo con referencia y vencimiento / 3DS en `<dialog>` / redirección / rechazo con motivo accionable / error de red con reintento del mismo intento, idempotencia por intento, doble clic seguro, respaldo si el SDK no carga, tokens CSS `--sf-pay-*`), puertos reemplazables `PaymentFormAdapter` y `PaymentTransport` (`createFetchTransport`), `mercadoPagoBricksAdapter` (solo deja salir token, método, emisor, cuotas e identificación; nunca el monto), `loadPaymentSdk` (nonce, timeout, https y origen permitido), `paymentCsp` y `VoucherCard`. `@asteby/storefront-react/promotions`: `PromoPopup` (frecuencia por sesión / N días / versión, exclusiones de ruta, solo cliente tras hidratar, rastreadores, vigencia, disparadores por tiempo, página o scroll, `<dialog>` con foco, Esc y cierre de 44 px; el contenido llega como datos), `CartProgressBars`, `CrossSellModal` y `OrderNote` (con respaldo `<form method="post">` sin JS). Textos es/en sobrescribibles por clave.
+
+### Patch Changes
+
+- Updated dependencies [7201b08]
+- Updated dependencies [f69aa91]
+  - @asteby/storefront@0.6.0
+
 ## 0.4.0
 
 ### Minor Changes
