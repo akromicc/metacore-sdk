@@ -281,7 +281,10 @@ export type CartDelivery = {
 
 export type CartCost = {
   subtotal: Money
+  /** Total discount (automatic tiers + codes). Use `discounts` to label each one. */
   discount: Money
+  /** One entry per applied discount (contract 1.2). Absent on older servers. */
+  discounts?: CartDiscountLine[]
   shipping: Money | null
   tax: Money | null
   total: Money
@@ -301,6 +304,8 @@ export type Cart = {
   delivery: CartDelivery
   cost: CartCost
   note?: string | null
+  /** Automatic-discount tiers and free-shipping progress (contract 1.2); `null`/absent without the promotions addon. */
+  promotions?: CartPromotions | null
   updated_at: string
 }
 
@@ -354,6 +359,10 @@ export type PaymentMethod = {
   /** `builtin` (manual transfer/cash) or `provider` (a payment addon). */
   kind: 'builtin' | 'provider'
   default: boolean
+  /** Embedded-payment options the provider offers (contract 1.2). Absent: fall back to a redirect. */
+  options?: PaymentOption[]
+  /** Public data to mount the provider form in the browser (contract 1.2). */
+  client?: PaymentClient
 }
 
 export type PaymentMethods = {
@@ -388,6 +397,12 @@ export type CheckoutInput = {
   /** Absolute URL; the API appends `?checkout=<id>` to it. */
   return_url: string
   note?: string
+  /** `embedded` pays in the page (`checkouts.pay`); `redirect` (default) sends the buyer to the provider. */
+  payment_flow?: PaymentFlow
+  /** The option the buyer chose; one of `PaymentMethod.options[].key`. */
+  payment_option?: PaymentOptionKey
+  /** The total the buyer saw. A different server total answers `422 price_mismatch`. */
+  expected_total?: Money
 }
 
 export type CheckoutPayment = {
@@ -403,6 +418,12 @@ export type CheckoutPayment = {
   instructions_data?: Record<string, unknown>
   /** Offline payment instructions (OXXO reference, SPEI CLABE, manual transfer data) as text; `null` when none. */
   instructions?: string | null
+  /** `embedded` when the buyer pays in the page (contract 1.2). */
+  flow?: PaymentFlow
+  /** Public data to mount the provider form. */
+  client?: PaymentClient
+  /** Pending action of the last attempt (voucher, 3DS challenge). */
+  action?: PaymentAction | null
 }
 
 export type CheckoutInfo = {
@@ -566,3 +587,235 @@ export type RestockSubscriptionInput = {
 }
 
 export type RestockSubscriptionResult = { status: 'pending' }
+
+
+// ---------------------------------------------------------------------------
+// Embedded payment (contract 1.2 — DISENO-PAGO-INTEGRADO-BRICKS)
+// ---------------------------------------------------------------------------
+
+export type PaymentFlow = 'redirect' | 'embedded'
+
+/** `card` and `cash` are paid in the page; `wallet` and `credits` always leave it (provider account). */
+export type PaymentOptionKey = 'card' | 'cash' | 'wallet' | 'credits'
+
+/** A cash point (OXXO, 7 Eleven...). The list comes from the provider, never from the shop code. */
+export type PaymentPoint = {
+  id: string
+  payment_method_id: string
+  payment_point?: string | null
+  label: string
+  logo_url?: string | null
+  group: 'main' | 'more'
+}
+
+export type PaymentOption = {
+  key: PaymentOptionKey
+  family?: string
+  /** Provider label, e.g. "Tarjeta de crédito o débito". */
+  label?: string
+  /** `true`: choosing it sends the buyer to the provider. */
+  redirect: boolean
+  max_installments?: number
+  points?: PaymentPoint[]
+  /** Provider-supplied promo text, e.g. "up to 12 payments". */
+  label_max?: string | null
+}
+
+/** Origins the provider needs in the page's CSP, declared by the provider. */
+export type PaymentClientCsp = {
+  script?: string[]
+  frame?: string[]
+  connect?: string[]
+  img?: string[]
+  form?: string[]
+}
+
+/** Public data to mount a provider form. `public_key` is public by design; never a secret. */
+export type PaymentClient = {
+  /** Adapter key, e.g. `mercadopago_bricks`. */
+  kind: string
+  sdk_url: string
+  public_key: string
+  locale?: string
+  market?: string
+  options?: PaymentOption[]
+  csp?: PaymentClientCsp
+  test_mode?: boolean
+}
+
+/** Neutral reasons for a rejected payment (provider codes are translated server-side). */
+export type DeclineCode =
+  | 'insufficient_funds'
+  | 'invalid_cvc'
+  | 'invalid_expiry'
+  | 'invalid_card_data'
+  | 'call_issuer'
+  | 'card_disabled'
+  | 'duplicate'
+  | 'max_attempts'
+  | 'authentication_failed'
+  | 'declined'
+
+export type PaymentVoucher = {
+  payment_point: string
+  reference: string
+  /** https page with the printable voucher. */
+  voucher_url?: string | null
+  barcode?: string | null
+  clabe?: string | null
+  /** The exact amount to pay. The cart sends a decimal string plus `currency`; a `Money` object is also accepted. */
+  amount?: Money | string | number
+  currency?: string
+  /** RFC 3339. */
+  expires_at?: string | null
+}
+
+export type PaymentAction = {
+  type: 'none' | 'challenge' | 'voucher' | 'redirect'
+  challenge?: { url?: string; creq?: string } | null
+  voucher?: PaymentVoucher | null
+  redirect_url?: string | null
+}
+
+export type PaymentAttemptStatus = 'paid' | 'pending' | 'requires_action' | 'failed' | 'expired' | 'cancelled'
+
+/** What the buyer should do next after a rejection (stable enum from the cart). */
+export type PaymentNextStep = 'retry' | 'fix_card_data' | 'use_other_card' | 'pay_cash' | 'contact_issuer' | 'check_email' | 'rebuild_cart'
+
+/** `POST /storefront/checkouts/:id/payment`. The amount is the server's; the browser only brings `provider_data`. */
+export type PaymentSubmitInput = {
+  method: 'card' | 'cash' | 'bank_transfer'
+  /** What the provider SDK gave the browser (token, payment_method_id...). Never logged or stored. */
+  provider_data: Record<string, unknown>
+  device_session_id?: string
+  /** The total the buyer saw. */
+  expected_total?: Money
+}
+
+export type PaymentAttemptResult = {
+  payment: {
+    provider: string
+    status: PaymentAttemptStatus
+    /** Server classification: `approved | pending | rejected | redirect | challenge`. */
+    outcome?: string
+    decline_code?: DeclineCode | null
+    next_step?: PaymentNextStep | null
+    retryable?: boolean
+    /** Server-written texts (es / en). The helpers prefer the shop's own catalog but fall back to these. */
+    message?: string | null
+    message_en?: string | null
+    action?: PaymentAction | null
+  }
+  checkout?: CheckoutInfo
+  order?: { id?: string; number?: string | null }
+  attempt?: { n: number }
+  attempts_left?: number
+}
+
+/** `GET /storefront/checkouts/:id/payment-config`: what to mount for an embedded checkout. */
+export type PaymentConfig = {
+  provider: string
+  flow: PaymentFlow
+  option: PaymentOptionKey | null
+  payable: boolean
+  /** Why it is not payable: `not_embedded | paid | closed | expired | too_many_attempts | payment_in_progress`. */
+  reason: string | null
+  amount: Money
+  currency: string
+  public_key: string | null
+  methods: string[]
+  options: PaymentOption[]
+  client: PaymentClient | null
+  checkout: CheckoutInfo
+  /** Pending voucher / challenge / redirect of an earlier attempt, to show again after a reload. */
+  action: PaymentAction | null
+  attempts_left: number
+}
+
+// ---------------------------------------------------------------------------
+// Promotions (contract 1.2 — DISENO-VENTA-CRUZADA-Y-DESCUENTOS-ESCALONADOS)
+// ---------------------------------------------------------------------------
+
+export type PromotionReward =
+  | { kind: 'percent'; percent: string }
+  | { kind: 'fixed'; amount: Money }
+  | { kind: 'free_shipping' }
+
+export type PromotionTier = {
+  id: string
+  threshold: Money
+  reward: PromotionReward
+  reached: boolean
+  /** Position of the milestone on the bar (0-100), computed by OPS. */
+  percent_of_max: number
+}
+
+export type CartPromotions = {
+  version: 1
+  promotion_id: string
+  title: string
+  basis: Money
+  tiers: PromotionTier[]
+  applied: { tier_id: string; reward: PromotionReward; amount: Money } | null
+  next_tier: { tier_id: string; threshold: Money; remaining: Money; reward: PromotionReward; percent: number } | null
+  max_reached: boolean
+  percent_of_max: number
+  combines_with_codes: boolean
+  ends_at: string | null
+  excluded_line_ids: string[]
+  suppressed: { reason: 'code_better' | 'list_final' | 'limit_reached' } | null
+  free_shipping: {
+    /** `0.00` = no minimum. */
+    threshold: Money
+    basis: Money
+    remaining: Money
+    reached: boolean
+    percent: number
+  } | null
+}
+
+export type CartDiscountLine = {
+  kind: 'automatic' | 'code'
+  id: string
+  title: string
+  code: string | null
+  amount: Money
+}
+
+export type CartRecommendation = {
+  product: Pick<Product, 'id' | 'handle' | 'title' | 'featured_image' | 'options' | 'vendor'>
+  /** Only sellable variants, with the server price. */
+  variants: ProductVariant[]
+  default_variant_id: string
+  source: 'curated' | 'bought_together' | 'bestseller' | 'similar'
+  unlocks: { tier_id: string; reward: PromotionReward; remaining_after: Money } | null
+}
+
+export type CartRecommendations = { nodes: CartRecommendation[]; promotions: CartPromotions | null }
+
+export type RecommendationPlacement = 'checkout_upsell' | 'cart' | 'drawer'
+
+/** Public announcement behind the entry pop-up (`GET /storefront/promotions`). Amounts come from the engine. */
+export type PromotionAnnouncement = {
+  id: string
+  version: number
+  placement: 'entry_popup'
+  headline: string
+  subheadline?: string | null
+  cta_label?: string | null
+  /** Internal path. */
+  cta_url?: string | null
+  image?: { url: string; alt: string } | null
+  tiers: { threshold: Money; reward: PromotionReward }[]
+  free_shipping_threshold: Money | null
+  /** Server-generated fine print. */
+  legal_text: string
+  combines_with_codes: boolean
+  starts_at: string | null
+  ends_at: string | null
+  frequency?: 'session' | 'days' | 'campaign'
+  frequency_days?: number
+  trigger?: { delay_ms?: number; pageviews?: number; scroll_percent?: number }
+}
+
+export type PromotionsList = { nodes: unknown[]; announcements: PromotionAnnouncement[] }

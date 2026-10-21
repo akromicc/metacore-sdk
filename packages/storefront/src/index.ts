@@ -47,5 +47,37 @@ export type {
   ResolveAvailabilityOptions,
 } from './availability.js'
 
+export {
+  paymentMessages,
+  declineMessageKey,
+  declineMessage,
+  safeHttpsUrl,
+  paymentOutcome,
+  paymentErrorView,
+  formatVoucherExpiry,
+  paymentIdempotencyKey,
+} from './payments.js'
+export type {
+  PaymentErrorKind,
+  PaymentErrorView,
+  PaymentLocale,
+  PaymentMessageKey,
+  PaymentMessages,
+  PaymentOutcome,
+  PaymentOutcomeKind,
+} from './payments.js'
+
+export { promotionMessages, rewardLabel, promoProgressView, clampPercent, normalizeNote, NOTE_MAX_LENGTH } from './promotions.js'
+export type {
+  DiscountBarState,
+  DiscountBarView,
+  PromoProgressView,
+  PromotionLocale,
+  PromotionMessageKey,
+  PromotionMessages,
+  ShippingBarState,
+  ShippingBarView,
+} from './promotions.js'
+
 export type { GeoPoint, OpeningHours, OpenStatus } from './geo.js'
 export type * from './types.js'

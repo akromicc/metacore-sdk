@@ -18,6 +18,12 @@ import type {
   CartBuyerInput,
   CartLineInput,
   CartLineUpdateInput,
+  CartRecommendations,
+  PaymentAttemptResult,
+  PaymentConfig,
+  PaymentSubmitInput,
+  PromotionsList,
+  RecommendationPlacement,
   CheckoutInput,
   CheckoutResult,
   Collection,
@@ -428,6 +434,15 @@ export function createStorefrontClient(config: StorefrontClientOptions) {
         get<PaymentMethods>(cartPath(id, '/payment-methods'), undefined, options),
       setDelivery: (id: string, delivery: DeliveryInput, options?: WriteOptions) =>
         write<Cart>('PUT', cartPath(id, '/delivery'), delivery, options),
+      /** Order note (up to 1000 characters). `null` or empty clears it. */
+      setNote: (id: string, note: string | null, options?: WriteOptions) =>
+        write<Cart>('PUT', cartPath(id, '/note'), { note }, options),
+      /**
+       * Cross-sell suggestions: only sellable variants, with `unlocks` when adding one reaches the next
+       * discount tier. `first` 1-8 (default 4). `private, no-store`; ask on demand, not on every render.
+       */
+      recommendations: (id: string, params: { first?: number; placement?: RecommendationPlacement } = {}, options?: RequestOptions) =>
+        get<CartRecommendations>(cartPath(id, '/recommendations'), params as QueryParams, options),
       /** Reserves stock and creates the order. Sends `Idempotency-Key` (auto-generated if omitted). */
       checkout: (id: string, input: CheckoutInput, options: WriteOptions = {}) =>
         write<CheckoutResult>('POST', cartPath(id, '/checkout'), input, {
@@ -436,7 +451,26 @@ export function createStorefrontClient(config: StorefrontClientOptions) {
         }),
     },
 
+    promotions: {
+      /** Public promotions and the entry pop-up announcement for the request's market (cacheable). */
+      list: (options?: RequestOptions) => get<PromotionsList>('/storefront/promotions', undefined, options),
+    },
+
     checkouts: {
+      /** What to mount for an embedded checkout (public key, options, amount) and whether it can still be paid. Never cache. */
+      paymentConfig: (id: string, options?: RequestOptions) =>
+        getOrNull<PaymentConfig>(`/storefront/checkouts/${enc(id)}/payment-config`, undefined, options),
+      /**
+       * Pays a checkout in the page. The browser brings only what the provider SDK returned (`provider_data`);
+       * the amount is the server's. `idempotencyKey` is REQUIRED (use `paymentIdempotencyKey(checkoutId, attempt)`):
+       * repeating a call with the same key never charges twice. Needs a server token (`checkout:write`).
+       */
+      pay: (id: string, input: PaymentSubmitInput, options: WriteOptions & { idempotencyKey: string }) => {
+        if (!options || typeof options.idempotencyKey !== 'string' || !options.idempotencyKey.trim()) {
+          throw new TypeError('checkouts.pay: idempotencyKey is required')
+        }
+        return write<PaymentAttemptResult>('POST', `/storefront/checkouts/${enc(id)}/payment`, input, options)
+      },
       /**
        * Reads a placed checkout (same shape as the `carts.checkout` result). `order.number` is `null` until OPS
        * has created the order (a few hundred ms after checkout); poll once or twice and, if it is still `null`,

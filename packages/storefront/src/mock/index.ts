@@ -12,6 +12,7 @@ import type {
   Article,
   Cart,
   CartLine,
+  CartRecommendation,
   Collection,
   Customer,
   Facet,
@@ -19,8 +20,11 @@ import type {
   Menu,
   Order,
   Page,
+  PaymentAttemptResult,
+  PaymentConfig,
   Product,
   ProductVariant,
+  PromotionAnnouncement,
   Shop,
   StorefrontErrorCode,
   Theme,
@@ -76,6 +80,10 @@ export type MockStorefrontOptions = {
   pages?: Page[]
   menus?: Menu[]
   articles?: Article[]
+  /** Entry pop-up announcements served by `GET /storefront/promotions` (default none). */
+  announcements?: PromotionAnnouncement[]
+  /** Payment attempts allowed per checkout before `429 too_many_attempts` (default 5). */
+  maxPaymentAttempts?: number
 }
 
 type CartRecord = {
@@ -85,6 +93,7 @@ type CartRecord = {
   buyer: Cart['buyer']
   shipping_address: Address | null
   delivery: Cart['delivery']
+  note: string | null
   updated_at: string
 }
 
@@ -105,6 +114,8 @@ export type MockState = {
   sessions: Map<string, string>
   idempotency: Map<string, { status: number; body: unknown }>
   checkouts: Map<string, unknown>
+  /** Payment attempts per checkout (`n`, last result). */
+  payments: Map<string, { attempts: number; last: PaymentAttemptResult | null }>
   /** `contact|sku` of accepted "notify me" subscriptions. */
   restock: Set<string>
   seq: number
@@ -209,6 +220,7 @@ export function createMockStorefront(options: MockStorefrontOptions = {}) {
       sessions: new Map(),
       idempotency: new Map(),
       checkouts: new Map(),
+      payments: new Map(),
       restock: new Set(),
       seq: 0,
     }
@@ -507,6 +519,7 @@ export function createMockStorefront(options: MockStorefrontOptions = {}) {
         total: fromCents(total, currency),
         tax_included: true,
       },
+      note: cart.note,
       updated_at: cart.updated_at,
     }
   }
@@ -636,6 +649,7 @@ export function createMockStorefront(options: MockStorefrontOptions = {}) {
       buyer: { email: null, phone: null, customer_id: null },
       shipping_address: null,
       delivery: { method: null, rate_id: null, branch_id: null },
+      note: null,
       updated_at: now(),
     }
     if (body.lines !== undefined) addLines(cart, validateLines(body.lines))
@@ -734,6 +748,42 @@ export function createMockStorefront(options: MockStorefrontOptions = {}) {
     cart.updated_at = now()
     return { body: renderCart(cart), cache: 'private' }
   })
+  // Order note, cross-sell and promotions (contract 1.2)
+  route('PUT', '/carts/:id/note', 'cart:write', ({ params, body }) => {
+    const cart = getCartRecord(params[0]!)
+    const raw = body.note
+    if (raw !== null && raw !== undefined && typeof raw !== 'string') throw new HttpError(400, 'validation', 'note must be a string or null', 'note')
+    const text = typeof raw === 'string' ? raw.trim() : ''
+    if (text.length > 1000) throw new HttpError(400, 'validation', 'note must be at most 1000 characters', 'note')
+    cart.note = text || null
+    cart.updated_at = now()
+    return { body: renderCart(cart), cache: 'private' }
+  })
+  route('GET', '/carts/:id/recommendations', 'cart:write', ({ params, search }) => {
+    const cart = getCartRecord(params[0]!)
+    const first = Math.min(8, Math.max(1, Number.parseInt(search.get('first') ?? '4', 10) || 4))
+    const inCart = new Set(cart.lines.map((l) => findVariant(l.variant_id)?.product.id))
+    const nodes: CartRecommendation[] = []
+    for (const p of state.products) {
+      if (inCart.has(p.id)) continue
+      const variants = p.variants.filter((v) => v.available_for_sale)
+      if (variants.length === 0) continue
+      nodes.push({
+        product: { id: p.id, handle: p.handle, title: p.title, featured_image: p.featured_image, options: p.options, vendor: p.vendor },
+        variants,
+        default_variant_id: variants[0]!.id,
+        source: 'similar',
+        unlocks: null,
+      })
+      if (nodes.length >= first) break
+    }
+    return { body: { nodes, promotions: null }, cache: 'private' }
+  })
+  route('GET', '/promotions', 'catalog:read', () => ({
+    body: { nodes: [], announcements: options.announcements ?? [] },
+    cache: 'public',
+  }))
+
   route('POST', '/carts/:id/checkout', 'checkout:write', ({ params, body, headers }) => {
     const key = headers.get('idempotency-key')
     if (key) {
@@ -803,6 +853,102 @@ export function createMockStorefront(options: MockStorefrontOptions = {}) {
     const found = state.checkouts.get(params[0]!)
     if (!found) throw new HttpError(404, 'not_found', 'Checkout not found')
     return { body: found, cache: 'private' }
+  })
+
+  // Embedded payment (contract 1.2). The result depends on the provider token, like the sandbox cardholder names.
+  const DECLINES: Record<string, NonNullable<PaymentAttemptResult['payment']['decline_code']>> = {
+    tok_OTHE: 'declined',
+    tok_CALL: 'call_issuer',
+    tok_FUND: 'insufficient_funds',
+    tok_SECU: 'invalid_cvc',
+    tok_EXPI: 'invalid_expiry',
+    tok_FORM: 'invalid_card_data',
+  }
+  const maxPaymentAttempts = options.maxPaymentAttempts ?? 5
+  route('GET', '/checkouts/:id/payment-config', 'checkout:write', ({ params }) => {
+    const found = state.checkouts.get(params[0]!) as { checkout: PaymentConfig['checkout'] } | undefined
+    if (!found) throw new HttpError(404, 'not_found', 'Checkout not found')
+    const st = state.payments.get(params[0]!)
+    const config: PaymentConfig = {
+      provider: 'mock',
+      flow: 'embedded',
+      option: 'card',
+      payable: found.checkout.status === 'pending' && (st?.attempts ?? 0) < maxPaymentAttempts,
+      reason: null,
+      amount: found.checkout.total,
+      currency: found.checkout.total.currency_code,
+      public_key: 'TEST-mock-public-key',
+      methods: ['card', 'cash'],
+      options: [{ key: 'card', redirect: false, max_installments: 12 }, { key: 'cash', redirect: false }],
+      client: { kind: 'mock', sdk_url: 'https://mock.local/sdk.js', public_key: 'TEST-mock-public-key' },
+      checkout: found.checkout,
+      action: st?.last?.payment.action ?? null,
+      attempts_left: maxPaymentAttempts - (st?.attempts ?? 0),
+    }
+    return { body: config, cache: 'private' }
+  })
+  route('POST', '/checkouts/:id/payment', 'checkout:write', ({ params, body, headers }) => {
+    const key = headers.get('idempotency-key')
+    if (!key) throw new HttpError(400, 'validation', 'Idempotency-Key header is required', 'Idempotency-Key')
+    const id = params[0]!
+    const prev = state.idempotency.get(`pay:${id}:${key}`)
+    if (prev) return { status: prev.status, body: prev.body, cache: 'private' }
+    const found = state.checkouts.get(id) as { checkout: { status: string; total: { amount: string; currency_code: string }; stock_hold_expires_at: string | null } } | undefined
+    if (!found) throw new HttpError(404, 'not_found', 'Checkout not found')
+    const method = body.method
+    if (method !== 'card' && method !== 'cash' && method !== 'bank_transfer') throw new HttpError(400, 'validation', 'method must be card, cash or bank_transfer', 'method')
+    const data = body.provider_data
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) throw new HttpError(400, 'validation', 'provider_data is required', 'provider_data')
+    const exp = body.expected_total as { amount?: string } | undefined
+    if (exp && exp.amount !== undefined && toCents(exp.amount) !== toCents(found.checkout.total.amount)) {
+      throw new HttpError(422, 'price_mismatch', 'The total changed', 'expected_total', { cost: found.checkout.total })
+    }
+    const st = state.payments.get(id) ?? { attempts: 0, last: null }
+    if (found.checkout.status === 'paid' || st.last?.payment.status === 'pending' || st.last?.payment.status === 'requires_action') {
+      throw new HttpError(409, 'conflict', 'A payment is already in progress', 'payment_in_progress')
+    }
+    if (found.checkout.stock_hold_expires_at && Date.parse(found.checkout.stock_hold_expires_at) < Date.now()) {
+      throw new HttpError(409, 'expired', 'The reservation expired')
+    }
+    if (st.attempts >= maxPaymentAttempts) throw new HttpError(429, 'rate_limited', 'too_many_attempts')
+    st.attempts += 1
+    const token = typeof (data as Record<string, unknown>).token === 'string' ? ((data as Record<string, unknown>).token as string) : ''
+    const attemptsLeft = maxPaymentAttempts - st.attempts
+    let payment: PaymentAttemptResult['payment']
+    if (method !== 'card') {
+      const pointId = String((data as Record<string, unknown>).payment_method_id ?? 'oxxo')
+      payment = {
+        provider: 'mock',
+        status: 'requires_action',
+        action: {
+          type: 'voucher',
+          voucher: {
+            payment_point: pointId,
+            reference: `${pointId.toUpperCase()}-${id.slice(-6).toUpperCase()}`,
+            voucher_url: `https://mock.local/voucher/${id}`,
+            amount: found.checkout.total.amount,
+            currency: found.checkout.total.currency_code,
+            expires_at: new Date(Date.now() + 48 * 3_600_000).toISOString(),
+          },
+        },
+      }
+    } else if (token in DECLINES) {
+      payment = { provider: 'mock', status: 'failed', decline_code: DECLINES[token]!, retryable: true }
+    } else if (token === 'tok_CONT') {
+      payment = { provider: 'mock', status: 'pending', action: { type: 'none' } }
+    } else if (token === 'tok_3DS') {
+      payment = { provider: 'mock', status: 'requires_action', action: { type: 'challenge', challenge: { url: 'https://mock.local/3ds', creq: 'creq' } } }
+    } else {
+      payment = { provider: 'mock', status: 'paid' }
+      found.checkout.status = 'paid'
+    }
+    payment.outcome =
+      payment.status === 'paid' ? 'approved' : payment.status === 'failed' ? 'rejected' : payment.action?.type === 'challenge' ? 'challenge' : 'pending'
+    const result: PaymentAttemptResult = { attempt: { n: st.attempts }, payment, checkout: found.checkout as PaymentAttemptResult['checkout'], attempts_left: attemptsLeft }
+    st.last = result
+    state.payments.set(id, st)
+    state.idempotency.set(`pay:${id}:${key}`, { status: 200, body: result })
+    return { body: result, cache: 'private' }
   })
 
   // Restock subscriptions ("notify me when it is back")
