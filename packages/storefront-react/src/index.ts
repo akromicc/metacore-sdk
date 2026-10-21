@@ -64,6 +64,25 @@ export {
   resolveSectionProps,
   sectionJsonSchema,
 } from './sections.js'
+export {
+  OPS_BUILTIN_SECTION_TYPES,
+  OPS_PROP_KINDS,
+  SectionTypesValidationError,
+  sectionTypesToOps,
+  syncSectionTypes,
+  validateOpsSectionTypes,
+} from './section-types.js'
+export type {
+  OpsPropKind,
+  OpsSectionProp,
+  OpsSectionType,
+  SectionTypeIssue,
+  SectionTypeWarning,
+  SectionTypesTarget,
+  SyncResult,
+  ToOpsOptions,
+  ToOpsResult,
+} from './section-types.js'
 export type {
   InferSectionProps,
   SectionComponentProps,
