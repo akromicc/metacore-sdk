@@ -130,6 +130,11 @@ export function resolveSectionProps(schema: SectionSchema, raw: Record<string, u
       else if (spec.required) errors.push({ prop: key, message: 'is required' })
       continue
     }
+    // OPS normalizes `image` props to `{ url, alt }` when it publishes a page; the
+    // schema (and the mock) carry the bare URL. Accept both and hand the URL on.
+    if (spec.kind === 'image' && typeof value === 'object' && value !== null && typeof (value as { url?: unknown }).url === 'string') {
+      value = (value as { url: string }).url
+    }
     if (STRING_KINDS.has(spec.kind)) {
       if (typeof value !== 'string') {
         fail('must be a string')
