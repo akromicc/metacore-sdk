@@ -80,7 +80,7 @@ describe('syncSectionTypes', () => {
     expect(url).toBe('https://ops.test/api/gw/storefront/content/section-types')
     expect(init.method).toBe('PUT')
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk_x')
-    expect(JSON.parse(init.body as string)[0].type).toBe('promo_banner')
+    expect(JSON.parse(init.body as string).section_types[0].type).toBe('promo_banner')
   })
 
   it('rejects pk_ tokens, local errors before any request, and HTTP errors', async () => {

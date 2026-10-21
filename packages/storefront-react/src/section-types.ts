@@ -211,7 +211,7 @@ export async function syncSectionTypes(target: SectionTypesTarget, source: Defin
   const { types, warnings } = sectionTypesToOps(source, options)
   let raw: unknown
   if ('request' in target && typeof target.request === 'function') {
-    raw = await target.request<unknown>({ method: 'PUT', path: SYNC_PATH, body: types })
+    raw = await target.request<unknown>({ method: 'PUT', path: SYNC_PATH, body: { section_types: types } })
   } else {
     const t = target as { baseUrl: string; token: string; fetch?: typeof fetch }
     if (!t.token.startsWith('sk_')) throw new TypeError('syncSectionTypes: an sk_ token with content:write is required')
@@ -220,7 +220,7 @@ export async function syncSectionTypes(target: SectionTypesTarget, source: Defin
     const res = await f(url, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(types),
+      body: JSON.stringify({ section_types: types }),
     })
     const text = await res.text()
     let body: any
