@@ -37,6 +37,26 @@
         "default": "./dist/mockups.cjs"
       }
     },
+    "./payments": {
+      "import": {
+        "types": "./dist/payments.d.ts",
+        "default": "./dist/payments.js"
+      },
+      "require": {
+        "types": "./dist/payments.d.cts",
+        "default": "./dist/payments.cjs"
+      }
+    },
+    "./promotions": {
+      "import": {
+        "types": "./dist/promotions.d.ts",
+        "default": "./dist/promotions.js"
+      },
+      "require": {
+        "types": "./dist/promotions.d.cts",
+        "default": "./dist/promotions.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,
