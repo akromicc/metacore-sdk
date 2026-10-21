@@ -1,5 +1,15 @@
 # @asteby/storefront-react
 
+## 0.6.0
+
+### Minor Changes
+
+- 6653e4c: Exportador de tipos de sección al formato de OPS: `registry.toOpsSectionTypes()` / `sectionTypesToOps()`, validación local (`validateOpsSectionTypes`, `SectionTypesValidationError`) y `syncSectionTypes()` (PUT `/storefront/content/section-types` con token `sk_`). `defineSection` acepta `category` y `maxPerPage`.
+
+### Patch Changes
+
+- 52435d3: Las secciones aceptan la prop `image` como `{ url, alt }` (la forma que OPS publica) además de la URL suelta; antes la sección se descartaba con «must be a string».
+
 ## 0.5.0
 
 ### Minor Changes
