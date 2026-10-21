@@ -7,6 +7,7 @@
  */
 import { Fragment, type ComponentType, type ReactNode } from 'react'
 import type { Section } from '@asteby/storefront'
+import { sectionTypesToOps, type ToOpsOptions, type ToOpsResult } from './section-types.js'
 
 export type SectionPropKind =
   | 'text'
@@ -75,6 +76,10 @@ export type SectionDefinition<P = Record<string, unknown>, C = any> = {
   type: string
   label?: string
   description?: string
+  /** OPS editor grouping (only used when exporting to OPS). */
+  category?: string
+  /** Max instances per page (only used when exporting to OPS). */
+  maxPerPage?: number
   schema: SectionSchema
   component: ComponentType<SectionComponentProps<P, C>>
 }
@@ -96,6 +101,8 @@ export function defineSection<const S extends SectionSchema, C = any>(definition
   type: string
   label?: string
   description?: string
+  category?: string
+  maxPerPage?: number
   schema: S
   component: ComponentType<SectionComponentProps<InferSectionProps<S>, C>>
 }): SectionDefinition<InferSectionProps<S>, C> {
@@ -268,6 +275,15 @@ export class SectionRegistry {
   /** JSON Schemas of every registered section, keyed by type. */
   toJSONSchema(): Record<string, Record<string, unknown>> {
     return Object.fromEntries(this.definitions().map((d) => [d.type, sectionJsonSchema(d)]))
+  }
+
+  /**
+   * Section types in the OPS `storefront_content` format, ready for
+   * `PUT /storefront/content/section-types`. Throws `SectionTypesValidationError`
+   * on anything OPS would reject; `warnings` flags built-in types.
+   */
+  toOpsSectionTypes(options?: ToOpsOptions): ToOpsResult {
+    return sectionTypesToOps(this, options)
   }
 }
 

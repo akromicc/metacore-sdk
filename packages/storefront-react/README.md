@@ -149,6 +149,33 @@ defaults, coerces numeric strings, drops unknown props and skips a section
 missing a required prop. `registry.toJSONSchema()` / `sectionJsonSchema(def)`
 emit the JSON Schema the OPS editor reads (`section.schema.json`).
 
+### Sincronizar tipos de sección con OPS
+
+Convierte los `defineSection` al formato del addon `storefront_content` y los
+publica sin escribir conversores a mano:
+
+```ts
+import { createStorefrontClient } from '@asteby/storefront'
+import { syncSectionTypes } from '@asteby/storefront-react'
+
+const sf = createStorefrontClient({ baseUrl: process.env.OPS_GW!, token: process.env.OPS_SK! }) // sk_ con content:write
+const { created, updated, warnings } = await syncSectionTypes(sf, registry)
+// o sin cliente: syncSectionTypes({ baseUrl, token, fetch? }, registry)
+// o solo exportar: registry.toOpsSectionTypes() -> { types, warnings }
+```
+
+Conversión: `items`→`fields` (recursivo), `url`/`color`→`text` (la URL viaja como
+texto; `link` de OPS es `{label,url}`), `products`→`product_list`. `max` fija el
+tope de texto en OPS. `defineSection` acepta `category` y `maxPerPage`.
+
+Los tipos integrados de OPS (`hero, product_grid, collection_list, rich_text,
+faq, image_with_text`) se excluyen (`excludeBuiltin`, por omisión `true`) y
+generan `warnings`; pasa `builtinProps: { hero: ['title', ...] }` para avisar
+solo de las props locales que no existen en OPS. Antes de llamar a OPS se valida
+localmente (lista sin `fields`, `select` sin `options`, kind desconocido, clave no
+snake_case, etiqueta vacía): lanza `SectionTypesValidationError` con `issues[]`
+(`{path,message}`); también disponible como `validateOpsSectionTypes(types)`.
+
 ### Theme
 
 `themeToCss(theme, { selector?, naming?, fontFallback? })` turns
