@@ -1,5 +1,12 @@
 # @asteby/metacore-pwa
 
+## 0.9.5
+
+### Patch Changes
+
+- Updated dependencies [732ca08]
+  - @asteby/metacore-notifications@42.2.0
+
 ## 0.9.4
 
 ### Patch Changes
