@@ -180,4 +180,53 @@ describe('theme boot', () => {
     expect(stored.modes.dark).toBeDefined()
     stop()
   })
+
+  it('sets color-scheme with the dark class from the cookie or the OS', () => {
+    document.cookie = 'metacore-ui-theme=dark; path=/'
+    runBoot()
+    expect(root().style.colorScheme).toBe('dark')
+    resetDocument()
+    runBoot()
+    expect(root().classList.contains('light')).toBe(true)
+    expect(root().style.colorScheme).toBe('light')
+    resetDocument()
+    prefersDark(true)
+    runBoot()
+    expect(root().classList.contains('dark')).toBe(true)
+    expect(root().style.colorScheme).toBe('dark')
+  })
+
+  it('a stored snapshot (stale brand) never changes the mode or color-scheme', () => {
+    // Snapshot taken in light mode with an old brand; the OS now says dark.
+    paintResolvedTheme('light')
+    expect(persistThemeBoot()).toBe(true)
+    resetDocument()
+    prefersDark(true)
+    runBoot()
+    expect(root().classList.contains('dark')).toBe(true)
+    expect(root().classList.contains('light')).toBe(false)
+    expect(root().style.colorScheme).toBe('dark')
+    // No dark snapshot exists, so no stale brand colour was painted either.
+    expect(root().style.getPropertyValue('--primary')).toBe('')
+  })
+
+  it('with window.__BRAND__ the stored brand vars and styles are not restored', () => {
+    document.cookie = 'metacore-ui-theme=dark; path=/'
+    paintResolvedTheme('dark')
+    persistThemeBoot()
+    resetDocument()
+    document.cookie = 'metacore-ui-theme=dark; path=/'
+    ;(window as unknown as { __BRAND__?: unknown }).__BRAND__ = { primary_color: '#112233' }
+    try {
+      runBoot()
+    } finally {
+      delete (window as unknown as { __BRAND__?: unknown }).__BRAND__
+    }
+    expect(root().classList.contains('dark')).toBe(true)
+    expect(root().style.colorScheme).toBe('dark')
+    expect(root().style.getPropertyValue('--primary')).toBe('')
+    expect(document.getElementById(BRANDING_STYLE_ID)).toBeNull()
+    // Non-brand parts of the snapshot (pack attribute) still apply.
+    expect(root().getAttribute('data-ui-theme')).toBe('glass')
+  })
 })

@@ -4,6 +4,7 @@ import {
   moduleLabelFromMeta,
   registerModuleLabel,
   registerModuleLabels,
+  resolveAvatarChoice,
 } from './visual'
 
 describe('moduleLabelFromMeta: el origen es el nombre traducido del addon', () => {
@@ -48,5 +49,33 @@ describe('humanizeModuleKey', () => {
     expect(humanizeModuleKey('channel_orders')).toBe('Channel Orders')
     expect(humanizeModuleKey('pos')).toBe('POS')
     expect(humanizeModuleKey('fiscal_mexico')).toBe('Fiscal Mexico')
+  })
+})
+
+describe('resolveAvatarChoice priority', () => {
+  const cases: Array<[string, Parameters<typeof resolveAvatarChoice>[0], unknown]> = [
+    ['image beats everything', { image: '/i.png', icon: 'bell', actor: { name: 'A B' }, user: { avatar: '/u.png' } }, { kind: 'image', src: '/i.png' }],
+    ['icon beats user avatar and initials', { icon: 'bell', user: { name: 'Usuario Nombre', avatar: '/u.png' } }, { kind: 'icon' }],
+    ['metadata.color (object) counts as explicit icon', { metadata: { color: '#f00' }, user: { name: 'Usuario Nombre' } }, { kind: 'icon' }],
+    ['metadata.color (JSON string) counts as explicit icon', { metadata: '{"color":"#f00"}', user: { name: 'Usuario Nombre' } }, { kind: 'icon' }],
+    ['blank icon/colour is not explicit', { icon: '  ', metadata: { color: ' ' }, user: { name: 'Usuario Nombre' } }, { kind: 'initials', initials: 'UN' }],
+    ['actor avatar beats user avatar', { actor: { avatar: '/a.png' }, user: { avatar: '/u.png' } }, { kind: 'image', src: '/a.png' }],
+    ['user avatar beats initials', { user: { name: 'Ana Pérez', avatar: '/u.png' } }, { kind: 'image', src: '/u.png' }],
+    ['actor initials beat user initials', { actor: { name: 'Ana Pérez' }, user: { name: 'Usuario Nombre' } }, { kind: 'initials', initials: 'AP' }],
+    ['empty actor falls back to user', { actor: {}, user: { name: 'Ana Pérez' } }, { kind: 'initials', initials: 'AP' }],
+    ['user initials', { user: { name: 'Ana Pérez' } }, { kind: 'initials', initials: 'AP' }],
+    ['nothing: type icon', {}, { kind: 'icon' }],
+  ]
+  it.each(cases)('%s', (_n, input, expected) => {
+    expect(resolveAvatarChoice(input)).toEqual(expected)
+  })
+
+  it('a failed image falls through to the next level', () => {
+    expect(resolveAvatarChoice({ image: '/i.png', icon: 'bell' }, true)).toEqual({ kind: 'icon' })
+    expect(resolveAvatarChoice({ image: '/i.png', user: { name: 'Ana Pérez' } }, true)).toEqual({ kind: 'initials', initials: 'AP' })
+  })
+
+  it('applies resolveImageUrl', () => {
+    expect(resolveAvatarChoice({ image: 'x.png' }, false, (s) => `/cdn/${s}`)).toEqual({ kind: 'image', src: '/cdn/x.png' })
   })
 })

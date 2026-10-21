@@ -138,6 +138,13 @@ changed (e.g. after a settings save).
 - Persistence key is `platform-branding` in `localStorage`. Override via
   `storageKey`. `applyCachedBranding(storageKey?)` is exported for hosts
   that need a non-default key in their pre-React boot script.
+- First frame: if `window.__BRAND__` exists (the server inlines it via
+  `/api/brand/boot.js`, same field names as `PlatformBranding`),
+  `applyCachedBranding` paints it and rewrites the storage key with it; the
+  stored value is used only when `__BRAND__` is absent (offline). Every real
+  fetcher response REPLACES the stored fields (no merge with older values).
+  Colors must be `#RRGGBB`; anything else is dropped before painting or storing
+  (`sanitizeBranding`, `persistBranding`, `readWindowBranding` are exported).
 - `staleTime` defaults to 5 minutes (TanStack Query). The provider keeps
   one query per `storageKey`.
 
