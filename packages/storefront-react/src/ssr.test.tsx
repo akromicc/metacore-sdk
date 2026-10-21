@@ -239,6 +239,23 @@ describe('sections', () => {
   })
 })
 
+describe('section image props', () => {
+  const schema = { image: { label: 'Foto', kind: 'image' as const }, title: { label: 'Título', kind: 'text' as const, default: '' } }
+
+  it('accepts the bare URL and the { url, alt } object OPS publishes', () => {
+    expect(resolveSectionProps(schema, { image: '/a.webp' }).props.image).toBe('/a.webp')
+    const { props, errors } = resolveSectionProps(schema, { image: { url: '/a.webp', alt: 'Auto' } })
+    expect(props.image).toBe('/a.webp')
+    expect(errors).toEqual([])
+  })
+
+  it('still rejects an image object without a URL', () => {
+    const { props, errors } = resolveSectionProps(schema, { image: { alt: 'Auto' } })
+    expect(props.image).toBeUndefined()
+    expect(errors.map((e) => e.prop)).toEqual(['image'])
+  })
+})
+
 describe('theme', () => {
   it('turns theme tokens into CSS variables', async () => {
     const theme = await sf.content.theme()
