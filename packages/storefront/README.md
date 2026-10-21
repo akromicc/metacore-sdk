@@ -217,6 +217,26 @@ part numbers) â†’ words in `product_type`, category and tags (never the title) â
 options, variant), never prices, and never fill a missing value; every string
 is cleaned and capped (`MOCKUP_TEXT_LIMITS`).
 
+## Embedded payment and promotions (Storefront API 1.2)
+
+Types and pure presentation helpers; the React components live in `@asteby/storefront-react`.
+
+```ts
+const cfg = await sf.checkouts.paymentConfig(checkoutId)          // payable, reason, amount, client, action (voucher/3DS pendiente tras recargar)
+const methods = await sf.carts.paymentMethods(cart.id)           // methods[].options / .client (public data to mount the form)
+const checkout = await sf.carts.checkout(cart.id, { payment_method: 'mercadopago', return_url, payment_flow: 'embedded', payment_option: 'card', expected_total: cart.cost.total })
+const result = await sf.checkouts.pay(checkout.checkout.id, { method: 'card', provider_data: { token }, expected_total: cart.cost.total },
+  { idempotencyKey: paymentIdempotencyKey(checkout.checkout.id, attemptId) })   // idempotencyKey is REQUIRED (throws before calling)
+const outcome = paymentOutcome(result, 'es-MX')                   // approved | in_review | voucher | challenge | redirect | rejected | expired | cancelled
+paymentErrorView(error)                                           // network (retry same attempt) | price_mismatch | payment_in_progress | expired | too_many_attempts
+```
+
+- `declineMessage(code, locale)` / `paymentMessages(locale, overrides)`: actionable es/en texts; unknown codes become `declined`.
+- `safeHttpsUrl`: voucher and redirect URLs are only trusted when https.
+- `sf.carts.recommendations(id, { first, placement })`, `sf.carts.setNote(id, note)`, `sf.promotions.list()`; `Cart.promotions`, `CartCost.discounts[]`.
+- `promoProgressView(cart.promotions, locale)` and `rewardLabel(reward, locale)` only format what OPS sends (`remaining`, `percent`, `reached`); never subtract or divide in the shop.
+- The mock serves `POST /checkouts/:id/payment` with outcomes by token (`tok_APRO` paid, `tok_FUND`/`tok_SECU`/`tok_EXPI`/`tok_FORM`/`tok_CALL`/`tok_OTHE` rejected, `tok_CONT` in review, `tok_3DS` challenge, `method: 'cash'` voucher), idempotency, `price_mismatch` 422, attempts cap 429 and `409` while another attempt is paid/pending; plus `PUT /carts/:id/note`, `GET /carts/:id/recommendations` and `GET /promotions`.
+
 ## API
 
 `createStorefrontClient(options)`:

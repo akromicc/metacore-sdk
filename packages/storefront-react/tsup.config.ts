@@ -1,7 +1,12 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: { index: 'src/index.ts', mockups: 'src/mockups/index.ts' },
+  entry: {
+    index: 'src/index.ts',
+    mockups: 'src/mockups/index.ts',
+    payments: 'src/payments/index.ts',
+    promotions: 'src/promos/index.ts',
+  },
   format: ['esm', 'cjs'],
   // tsup's dts worker sets `baseUrl`, deprecated in TypeScript 6.
   dts: { compilerOptions: { ignoreDeprecations: '6.0' } },

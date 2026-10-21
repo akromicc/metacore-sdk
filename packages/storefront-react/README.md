@@ -413,6 +413,69 @@ larga; `mockupWordMax(ancho, letraMínima, ratio)` da el `wordMax` que todavía
 cabe. El suplemento base ya lo usa (`CREATINA MONOHIDRATADA` ya no queda en
 `MONOHIDRATA…`).
 
+## Pago integrado (`@asteby/storefront-react/payments`)
+
+Formulario de tarjeta dentro de la página (Mercado Pago Payment/Card Brick u otro proveedor), sin que el comprador salga. Sin estilos propios: `data-*` y variables CSS `--sf-pay-*`. El cliente **nunca calcula montos**: el total lo manda el servidor, se pasa al Brick y se devuelve como `expected_total`.
+
+Dos puertos reemplazables (`PaymentFormAdapter` = SDK del proveedor en el navegador; `PaymentTransport` = cómo llega el navegador al servidor de la tienda). El navegador nunca llama a OPS: la ruta de la tienda reenvía con `client.checkouts.pay(...)` y su token `sk_`.
+
+```tsx
+// app/routes/checkout.tsx (navegador)
+import { PaymentBrick, createFetchTransport } from '@asteby/storefront-react/payments'
+
+const transport = createFetchTransport('/pagar', { refreshUrl: '/pagar/estado' }) // misma-origen
+
+<PaymentBrick
+  client={card.client}            // paymentMethods[].client (public_key, sdk_url, options, csp)
+  amount={cart.cost.total}        // total de OPS; si cambia, el Brick se vuelve a montar
+  transport={transport}
+  nonce={nonce}                   // nonce de la CSP
+  locale="es-MX"
+  scope={cart.id}                 // la intención de pago se guarda por carrito
+  submitLabel="Realizar el pedido"
+  onResult={(o) => o.kind === 'approved' && navigate('/pagar/gracias')}
+  onFallback={() => setOption('card_redirect')}   // SDK bloqueado/timeout: Checkout Pro
+/>
+```
+
+```ts
+// servidor de la tienda (action de /pagar): traduce al contrato de OPS
+import { paymentIdempotencyKey } from '@asteby/storefront'
+const key = paymentIdempotencyKey(checkoutId, body.attempt)       // misma llave = mismo cobro
+const result = await sf.checkouts.pay(checkoutId, { method: 'card', provider_data: body.provider_data,
+  device_session_id: body.device_session_id, expected_total: body.expected_total }, { idempotencyKey: key })
+return Response.json(result)    // PaymentAttemptResult; 409/422/429 se devuelven como { error: { code } } con su status
+```
+
+- **Estados** (`useEmbeddedPayment` / `PaymentBrick` por `ref`): `loading → ready → processing → approved | in_review | voucher (efectivo con referencia y vencimiento) | challenge (3DS en `<dialog>`) | redirect | rejected | network_error | blocked | fallback`.
+- **Idempotencia**: un `attempt` por intento (sessionStorage, sin datos de tarjeta); el reintento por red reutiliza el mismo `attempt`, la misma llave y el mismo token (en memoria). Tras un rechazo hay intento nuevo y el formulario se vuelve a montar (el token es de un solo uso). El doble clic devuelve la petición en vuelo.
+- **Rechazos**: texto accionable por `decline_code` neutro (`paymentMessages`, es/en, sobrescribible por clave); nunca el código crudo del proveedor.
+- **Seguridad**: el adaptador de Mercado Pago solo deja salir `token`, `payment_method_id`, `issuer_id`, `installments` e identificación (descarta `transaction_amount`); el script solo carga de `https://sdk.mercadopago.com`; `paymentCsp([client], { nonce })` arma la CSP de `/pagar` con lo que declara el proveedor. Sin SRI a propósito (URL sin versión).
+- **Tema**: `--sf-pay-text`, `-text-muted`, `-background`, `-input-background`, `-primary`, `-primary-contrast`, `-error`, `-success`, `-outline`, `-radius` se leen al montar y se pasan al Brick; `--sf-pay-min-height` reserva el alto (sin saltos).
+- **Otro proveedor**: implementa `PaymentFormAdapter` (`load`, `mount → { collect, unmount }`) y pásalo en `adapter`/`adapters={{ stripe_elements: … }}`.
+
+## Promociones y venta cruzada (`@asteby/storefront-react/promotions`)
+
+Mecanismos sin contenido: los textos y montos llegan como datos de OPS (`Cart.promotions`, `GET /storefront/promotions`, `carts.recommendations`).
+
+```tsx
+import { CartProgressBars, CrossSellModal, OrderNote, PromoPopup } from '@asteby/storefront-react/promotions'
+
+<PromoPopup announcement={announcement} pathname={location.pathname}
+  onEvent={track} renderCta={({ href, label, onClick }) => <Link to={href} onClick={onClick}>{label}</Link>} />
+<CartProgressBars promotions={cart.promotions} />
+<CrossSellModal open={open} promotions={cart.promotions} recommendations={recs.nodes} totalSaved={cart.cost.discount}
+  onAdd={async ({ variantId }) => addToCart(variantId)}      // useFetcher; devuelve { error: 'sold_out' } en 409
+  onContinue={goToPayment} onSkip={(why) => { markSeen(); goToPayment() }} />
+<OrderNote value={cart.note} onSave={(n) => saveNote(n)} form={{ action: '/carrito', intent: 'note' }} />
+```
+
+- `PromoPopup`: solo cliente tras hidratar (no existe en el SSR), frecuencia `session` / cada N días (7) / una vez por versión, exclusiones de ruta (carrito, pago, gracias, cuenta, login, legales, editor; con o sin prefijo de mercado), sin rastreadores ni `navigator.webdriver`, dentro de la vigencia, disparadores 5 s / 2.ª página / 40 % de scroll (el primero), `<dialog>` con foco, Esc, fondo y X de 44 px.
+- `CartProgressBars`: `role="progressbar"` con `aria-valuetext`; usa `remaining`, `percent` y `reached` del servidor; umbral 0 = «Envío gratis en todo tu pedido» sin barra.
+- `CrossSellModal`: una vez por carrito lo decide la tienda; Esc/X/fondo/«Continuar sin agregar» = `onSkip`; errores de «agregar» en la tarjeta.
+- `OrderNote`: `<textarea>` con etiqueta, 1000 caracteres, guardado con *debounce* (800 ms) y al salir del campo; sin JS es un `<form method="post">` con botón «Guardar nota».
+- Funciones puras testeables: `isExcludedPath`, `frequencyAllows`, `isCrawler`, `withinWindow`, `resolveTrigger`, `safeInternalPath`.
+
 ## API
 
 | Export | |
@@ -427,3 +490,5 @@ cabe. El suplemento base ya lo usa (`CREATINA MONOHIDRATADA` ya no queda en
 | `defineSection`, `SectionRegistry`, `createSectionRegistry`, `Sections`, `resolveSectionProps`, `sectionJsonSchema` | Content sections |
 | `themeToCss`, `themeToCssVariables`, `ThemeStyle`, `themeFontsHref`, `tokenName` | SSR theme |
 | `ProductImage`, `ProductMockup`, `MockupProvider`, `createMockupRegistry`, `registerMockup`, `BUILTIN_MOCKUPS`, `MockupFrame`, `MockupText`, `TireMockup`, `PartMockup`, `SupplementMockup`, `GenericMockup` | Mockups de respaldo (subpath `/mockups`) |
+| `PaymentBrick`, `useEmbeddedPayment`, `VoucherCard`, `PaymentChallenge`, `createFetchTransport`, `mercadoPagoBricksAdapter`, `loadPaymentSdk`, `paymentCsp`, `readPaymentTheme` | Pago integrado (subpath `/payments`) |
+| `PromoPopup`, `CartProgressBars`, `PromoProgressBar`, `CrossSellModal`, `OrderNote`, `isExcludedPath`, `frequencyAllows`, `isCrawler` | Promociones y venta cruzada (subpath `/promotions`) |
