@@ -237,6 +237,38 @@ paymentErrorView(error)                                           // network (re
 - `promoProgressView(cart.promotions, locale)` and `rewardLabel(reward, locale)` only format what OPS sends (`remaining`, `percent`, `reached`); never subtract or divide in the shop.
 - The mock serves `POST /checkouts/:id/payment` with outcomes by token (`tok_APRO` paid, `tok_FUND`/`tok_SECU`/`tok_EXPI`/`tok_FORM`/`tok_CALL`/`tok_OTHE` rejected, `tok_CONT` in review, `tok_3DS` challenge, `method: 'cash'` voucher), idempotency, `price_mismatch` 422, attempts cap 429 and `409` while another attempt is paid/pending; plus `PUT /carts/:id/note`, `GET /carts/:id/recommendations` and `GET /promotions`.
 
+## Domain and market (single-customer storefront)
+
+A storefront that belongs to ONE organization sends its verified domain plus the
+market it is serving. OPS resolves the organization from the domain and honors
+the market when that organization has it active (otherwise it falls back to the
+domain's own market).
+
+```ts
+import { createStorefrontClient, storefrontDomainHeader } from '@asteby/storefront'
+
+const client = createStorefrontClient({
+  baseUrl: 'https://ops.example.com/api/gw',
+  token: process.env.STOREFRONT_SK!,
+  domain: 'godsnutrition.com', // verified domain of the organization
+  market: 'mx',                // -> X-Storefront-Domain: godsnutrition.com#mx
+})
+
+storefrontDomainHeader('godsnutrition.com', 'MX') // 'godsnutrition.com#mx'
+storefrontDomainHeader('godsnutrition.com')       // 'godsnutrition.com'
+```
+
+Per-request market (one domain, path prefixes `/mx`, `/us`): create the client
+per request with that request's `market`, or build the header yourself with
+`storefrontDomainHeader` and pass it in `headers`.
+
+### Market detection and hreflang
+
+Pure helpers, no DOM: `visitorCountry(headers)` (CDN country headers),
+`preferredLanguages` / `negotiateLocale` (Accept-Language), `suggestMarket`
+(suggests, never redirects; respects crawlers and a saved choice; country wins
+over language) and `hreflangLinks` for per-market SEO.
+
 ## API
 
 `createStorefrontClient(options)`:
@@ -249,6 +281,8 @@ paymentErrorView(error)                                           // network (re
 | `clientIp?` | Shopper IP for server-side calls → `X-Storefront-Client-IP` (see below) |
 | `fetch?` | Custom fetch (default `globalThis.fetch`) |
 | `locale?` | `Accept-Language` |
+| `domain?` | Public host of the storefront → `X-Storefront-Domain` (see below) |
+| `market?` | Market code (`mx`, `us`) → `X-Storefront-Domain: <domain>#<market>`; ignored without `domain` |
 | `headers?` | Extra headers on every request |
 | `timeoutMs?` | Abort after N ms (`StorefrontError` code `timeout`) |
 | `onRequest?(ctx)` | Runs before each request; return a `Response` to short-circuit (SSR cache hit) |
