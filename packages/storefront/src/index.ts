@@ -1,4 +1,4 @@
-export { createStorefrontClient, generateIdempotencyKey, normalizeClientIp, CLIENT_IP_HEADER } from './client.js'
+export { createStorefrontClient, generateIdempotencyKey, normalizeClientIp, storefrontDomainHeader, CLIENT_IP_HEADER } from './client.js'
 export type {
   FetchLike,
   PreviewOptions,
@@ -78,6 +78,9 @@ export type {
   ShippingBarState,
   ShippingBarView,
 } from './promotions.js'
+
+export { COUNTRY_HEADERS, hreflangLinks, negotiateLocale, preferredLanguages, suggestMarket, visitorCountry } from './market.js'
+export type { MarketInfo, MarketSuggestion } from './market.js'
 
 export type { GeoPoint, OpeningHours, OpenStatus } from './geo.js'
 export type * from './types.js'

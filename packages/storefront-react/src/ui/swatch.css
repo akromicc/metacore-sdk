@@ -1,0 +1,61 @@
+/*
+ * <Swatch>: muestra plana (sin brillo ni sombra). Solo cuando el color se confunde con el fondo (blanco en tema claro,
+ * negro en tema oscuro) lleva un aro fino del color primario de la tienda (--primary), así se ve de marca y no genérico.
+ */
+[data-swatch] {
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: 9999px;
+}
+[data-swatch][data-shape="square"] {
+  border-radius: 0.3125rem;
+}
+[data-swatch][data-edge] {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--primary, #111111) 70%, transparent);
+}
+/* Donde el color sí contrasta con el fondo, el aro sobra. */
+[data-swatch][data-edge="dark"] {
+  box-shadow: none;
+}
+:root[data-theme="dark"] [data-swatch][data-edge="dark"] {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--primary, #ffffff) 70%, transparent);
+}
+:root[data-theme="dark"] [data-swatch][data-edge="light"] {
+  box-shadow: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-swatch][data-edge="dark"] {
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--primary, #ffffff) 70%, transparent);
+  }
+  :root:not([data-theme="light"]) [data-swatch][data-edge="light"] {
+    box-shadow: none;
+  }
+}
+/*
+ * Emoji: cada sabor en su círculo (uno) o píldora (mezcla), con fondo suave del color de superficie (--tint) y un aro fino,
+ * como un badge. Así, en una fila de sabores se distingue qué emoji forman cada grupo.
+ */
+[data-swatch][data-kind="emoji"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: 9999px;
+  background: var(--tint, color-mix(in srgb, currentColor 10%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent);
+  color: inherit;
+}
+/* Con colores del sabor: píldora pastel clara (el emoji siempre contrasta, también en tema oscuro) y aro del color principal. */
+[data-swatch][data-kind="emoji"][data-colored] {
+  color: #111111;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sw-ring) 42%, transparent);
+}
+[data-swatch][data-kind="emoji"][data-mixed] {
+  padding-inline: 0.42em;
+}
+[data-swatch][data-kind="emoji"] > span {
+  position: relative;
+  display: inline-block;
+}
