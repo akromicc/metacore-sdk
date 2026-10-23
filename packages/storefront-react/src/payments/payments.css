@@ -45,6 +45,14 @@
   display: inline-block;
   vertical-align: middle;
 }
+/* The mark of a provider row (Mercado Pago…) is as wide as its logo: in line between the radio and the text, never over them. */
+[data-sf-pay-method] [data-sf-pay-icon='mark'] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: auto;
+  height: auto;
+}
 /* The open cash row already lists every point with its mark: the preview would repeat them. */
 [data-sf-pay-method] [data-sf-pay-choice]:has(input[name='payment_choice']:checked) [data-sf-pay-brands='cash'] {
   display: none;

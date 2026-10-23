@@ -159,6 +159,12 @@ describe('PaymentMethodSection', () => {
     expect(marks(row('mercadopago|card'))).toEqual(['visa', 'mastercard', 'amex'])
     expect(marks(row('mercadopago|cash'))).toEqual(['oxxo', '7eleven'])
     expect(marks(row('mercadopago|wallet'))).toEqual(['mercadopago'])
+    // The provider's logo lives in its own in-line slot (not the shop's fixed `icon` box): it cannot spill over the radio or the text.
+    const walletIcon = row('mercadopago|wallet').querySelector('[data-sf-pay-icon]')!
+    expect(walletIcon.getAttribute('data-sf-pay-icon')).toBe('mark')
+    expect(walletIcon.className).toBe('')
+    expect(walletIcon.querySelector('[data-sf-brand-mark="mercadopago"]')).toBeTruthy()
+    expect(row('mercadopago|card').querySelector('[data-sf-pay-icon]')).toBeNull()
     const points = container.querySelectorAll('[data-sf-pay-point]')
     expect([...points].map((p) => p.querySelector('[data-sf-brand-mark]')?.getAttribute('data-sf-brand-mark'))).toEqual(['oxxo', '7eleven', 'bbva'])
     // Text-only when the shop turns them off.

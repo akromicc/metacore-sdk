@@ -280,6 +280,7 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
         const slot = choice.option ?? 'plain'
         const icon = icons?.[slot] ?? (brandMarks ? defaultIcon(choice) : null)
         const marks = brandMarks ? rowMarks(choice, cardBrands) : []
+        const brandMarkIcon = !icons?.[slot] && brandMarks && choice.option !== 'card' && choice.option !== 'cash' && !!findBrand(choice.methodKey)
         return (
           <div key={choice.value} className={cx.choice} data-sf-pay-choice>
             <label className={cx.radioLabel}>
@@ -296,7 +297,9 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
                 {...tid('method')}
               />
               {icon ? (
-                <span className={cx.icon} aria-hidden="true">
+                // The default mark of a provider row is as wide as its logo: it does not take the shop's `icon` box (a fixed
+                // square would let the logo spill over the radio and the text).
+                <span className={brandMarkIcon ? undefined : cx.icon} data-sf-pay-icon={brandMarkIcon ? 'mark' : undefined} aria-hidden="true">
                   {icon}
                 </span>
               ) : null}
