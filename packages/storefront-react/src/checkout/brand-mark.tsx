@@ -126,8 +126,8 @@ export function BrandMark({ brand, logoUrl, size = 24, title, className }: Brand
   const lines = text.split('\n')
   const longest = Math.max(...lines.map((l) => l.length))
   // Short marks grow; long ones are squeezed into the badge (textLength) so every badge has the same box.
-  const fontSize = lines.length > 1 ? (longest <= 5 ? 11 : 9.5) : longest <= 2 ? 15 : longest <= 4 ? 12 : 10
-  const fit = (l: string) => (l.length > 5 ? { textLength: 40, lengthAdjust: 'spacingAndGlyphs' as const } : {})
+  const fontSize = lines.length > 1 ? (longest <= 5 ? 11 : 9.5) : longest <= 2 ? 15 : longest <= 4 ? 16 : 10
+  const fit = (l: string) => (l.length > 5 ? { textLength: 40, lengthAdjust: 'spacingAndGlyphs' as const } : l.length === 4 ? { textLength: 36, lengthAdjust: 'spacingAndGlyphs' as const } : {})
   const italic = found?.key === 'visa' || found?.key === 'fedex' ? 'italic' : undefined
   const common = {
     textAnchor: 'middle' as const,

@@ -27,6 +27,7 @@ Orden de fuentes: (a) kit de prensa de la empresa, (b) logo que la propia empres
 | `farmaciasyza` | Farmacias Yza | https://www.yza.mx/on/demandware.static/-/Sites-YzaMexico-Library/default/dw037d96fa/images/header/site-logo.svg | Sin licencia explícita: logo que la propia empresa publica en su sitio, usado para identificar su servicio (marca registrada de su titular) | 2026-10-23 | Color | SVG |
 | `fedex` | FedEx (FedEx Express) | https://commons.wikimedia.org/wiki/File:FedEx_Express.svg | Public domain (Commons; marca registrada) | 2026-10-23 | Color | SVG — Variante FedEx Express (la de paquetería); la versión corporativa incluye la leyenda 'Corporation'. |
 | `hsbc` | HSBC | https://commons.wikimedia.org/wiki/File%3AHSBC_logo_%282018%29.svg | Public domain (Commons; marca registrada) | 2026-10-23 | Color | SVG |
+| `imile` | iMile | https://www.imile.com/images/logos/Christmas_logo_Blue.svg | Sin licencia explícita: logo que la propia empresa publica en su sitio, usado para identificar su servicio (marca registrada de su titular) | 2026-10-23 | Color | SVG — Logo «iMile Delivery» tal como lo publica el sitio (el archivo se llama Christmas_logo_Blue, pero no lleva adornos); viewBox recortado al contenido. |
 | `jtexpress` | J&T Express | https://commons.wikimedia.org/wiki/File%3AJ%26T_Express_logo.svg | Public domain (Commons; marca registrada) | 2026-10-23 | Color | SVG |
 | `mastercard` | Mastercard | https://commons.wikimedia.org/wiki/File%3AMastercard_2019_logo.svg | Public domain (Commons; marca registrada) | 2026-10-23 | Color | SVG — Solo el símbolo de los círculos (sin la palabra), tal como lo publica Commons. |
 | `mercadopago` | Mercado Pago | https://http2.mlstatic.com/frontend-assets/mp-web-navigation/ui-navigation/7.8.2/mercadopago/logo__large@2x.png | Sin licencia explícita: logo que la propia empresa publica en su sitio, usado para identificar su servicio (marca registrada de su titular) | 2026-10-23 | Color | PNG — PNG de 284x74 px con paleta de 8 bits (3.5 KB): la fuente no ofrece SVG; Simple Icons solo tiene una versión monocroma. |
@@ -58,7 +59,7 @@ No se incluyen por no tener una fuente con condiciones claras:
 - `correosdemexico`: Correos de México: sin logo en Commons; el sitio oficial no expone un archivo de marca.
 - `canadapost`: Canada Post: sin logo de marca en Commons.
 - `casaley`: Casa Ley: el sitio solo ofrece PNG raster grande, sin versión vectorial ni licencia clara.
-- `calimax, extra, kiosko, quiken, carssa, imile`: Sin logo en Commons ni archivo de marca localizable en sus sitios.
+- `calimax, extra, kiosko, quiken, carssa`: Sin logo en Commons ni archivo de marca localizable en sus sitios.
 - `redpack/skydropx/envia (claves reales)`: No se pudo verificar contra packages/skydropx ni packages/envia: esos paquetes no existen en /home/user/projects/addons; las claves siguen siendo las del registro de #1218 más sus alias.
 - `googlepay`: Google Pay: el SVG de Commons incrusta una imagen raster (no es vectorial); se deja la insignia.
 

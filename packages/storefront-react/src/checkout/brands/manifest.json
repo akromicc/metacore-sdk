@@ -238,6 +238,16 @@
    "mode": "color",
    "format": "svg"
   },
+  "imile": {
+   "name": "iMile",
+   "source": "https://www.imile.com/images/logos/Christmas_logo_Blue.svg",
+   "origin": "Sitio oficial (imile.com, encabezado)",
+   "license": "Sin licencia explícita: logo que la propia empresa publica en su sitio, usado para identificar su servicio (marca registrada de su titular)",
+   "date": "2026-10-23",
+   "mode": "color",
+   "format": "svg",
+   "note": "Logo «iMile Delivery» tal como lo publica el sitio (el archivo se llama Christmas_logo_Blue, pero no lleva adornos); viewBox recortado al contenido."
+  },
   "mercadopago": {
    "name": "Mercado Pago",
    "source": "https://http2.mlstatic.com/frontend-assets/mp-web-navigation/ui-navigation/7.8.2/mercadopago/logo__large@2x.png",
@@ -264,7 +274,7 @@
   "correosdemexico": "Correos de México: sin logo en Commons; el sitio oficial no expone un archivo de marca.",
   "canadapost": "Canada Post: sin logo de marca en Commons.",
   "casaley": "Casa Ley: el sitio solo ofrece PNG raster grande, sin versión vectorial ni licencia clara.",
-  "calimax, extra, kiosko, quiken, carssa, imile": "Sin logo en Commons ni archivo de marca localizable en sus sitios.",
+  "calimax, extra, kiosko, quiken, carssa": "Sin logo en Commons ni archivo de marca localizable en sus sitios.",
   "redpack/skydropx/envia (claves reales)": "No se pudo verificar contra packages/skydropx ni packages/envia: esos paquetes no existen en /home/user/projects/addons; las claves siguen siendo las del registro de #1218 más sus alias.",
   "googlepay": "Google Pay: el SVG de Commons incrusta una imagen raster (no es vectorial); se deja la insignia."
  }
