@@ -7,6 +7,8 @@ import { paymentMethodMessages, type PaymentMethodMessages } from './payment-met
 import { PaymentBrick, type PaymentBrickHandle, type PaymentBrickProps } from './payment-brick.js'
 import type { PaymentEvent } from './use-embedded-payment.js'
 import type { PaymentOutcome } from '@asteby/storefront'
+import { BrandMark } from '../checkout/brand-mark.js'
+import { findBrand } from '../checkout/brands.js'
 
 /** Name of the radio group that carries the chosen row (`method` or `method|option`). */
 export const PAYMENT_CHOICE_FIELD = 'payment_choice'
@@ -23,7 +25,7 @@ export function formFields(form: HTMLFormElement | null | undefined): Record<str
 
 export type PaymentMethodClassNames = Partial<
   Record<
-    'root' | 'legend' | 'choice' | 'radioLabel' | 'radio' | 'labelText' | 'hint' | 'icon' | 'panel' | 'cashPoint' | 'cashPointInput' | 'cashMore' | 'note' | 'alert' | 'status' | 'brickWrap' | 'brick' | 'submit' | 'rebuild',
+    'root' | 'legend' | 'choice' | 'radioLabel' | 'radio' | 'labelText' | 'hint' | 'icon' | 'brands' | 'panel' | 'cashPoint' | 'cashPointInput' | 'cashMore' | 'note' | 'alert' | 'status' | 'brickWrap' | 'brick' | 'submit' | 'rebuild',
     string
   >
 >
@@ -53,9 +55,14 @@ export type PaymentMethodSectionProps = {
   deliveryReady?: boolean
   /**
    * Saves the chosen delivery on the server cart so the server total includes it. Resolve `true` once the new total
-   * has been read back (the `amount` prop is then up to date). Called once per delivery. Without it nothing waits.
+   * has been read back (the `amount` prop is then up to date). Called once per delivery, whatever the payment row (so
+   * the total on the button and in the shop's summary always holds the chosen delivery). Without it nothing waits.
+   *
+   * Resolve `'requote'` when the server refused the rate because the quote expired or changed and the shop is loading
+   * fresh rates: the section then says so (`quoteChanged`, a status, not an error), keeps the card in the page and
+   * tries again with the next delivery value. `false` is a real failure (the card degrades to the redirect).
    */
-  syncDelivery?: (delivery: string) => Promise<boolean>
+  syncDelivery?: (delivery: string) => Promise<boolean | 'requote'>
   /** A two-step checkout still collecting the address: the button reads "continue" and no card form shows. */
   addressFirst?: boolean
   /** The address must be saved again before paying. */
@@ -71,8 +78,16 @@ export type PaymentMethodSectionProps = {
   messages?: Parameters<typeof paymentMethodMessages>[1]
   /** Name for a plain method (`PaymentMethod` without options). Default: the key as it comes. */
   methodLabel?: (methodKey: string) => { label: string; hint?: string }
-  /** Per-row icon by option (`card`, `cash`, `wallet`, `credits`) or `plain`. */
+  /** Per-row icon by option (`card`, `cash`, `wallet`, `credits`) or `plain`. Replaces the default marks of that row. */
   icons?: Partial<Record<PaymentOptionKey | 'plain', ReactNode>>
+  /**
+   * Brand marks (`BrandMark`): the provider's mark on its account / no-card rows and on a plain method, the cash point
+   * marks on the cash row and next to each point, and `cardBrands` on the card row. Default true; `false` keeps the
+   * rows text-only.
+   */
+  brandMarks?: boolean
+  /** Card networks drawn on the card row (`visa`, `mastercard`, `amex`, `carnet`…), as the shop's provider accepts them. */
+  cardBrands?: readonly string[]
   /** How to print the total on the button. Default `formatMoney`. */
   renderAmount?: (amount: Money) => ReactNode
   /** Anchor to the cart for the "rebuild" action when the cart expired. Default: plain `<a href>`. */
@@ -131,6 +146,8 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
     nonce,
     methodLabel,
     icons,
+    brandMarks = true,
+    cardBrands = [],
     renderAmount,
     rebuildHref,
     renderLink,
@@ -159,10 +176,11 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
   const cardChosen = selected?.mode === 'card' && !retryAddress && !addressFirst
   const cardActive = hydrated && cardChosen && !fallback
 
-  // The server total must hold the chosen delivery before the form mounts: the shop saves it on the cart and re-reads
-  // the cart. Once per delivery.
-  const wantSync = cardActive && deliveryReady && Boolean(syncDelivery)
-  const [sync, setSync] = useState<{ key: string; ok: boolean } | null>(null)
+  // The server total must hold the chosen delivery before the card form mounts, and before any total is printed on the
+  // button: the shop saves it on the cart and re-reads the cart. Once per delivery, for every payment row (cash and
+  // redirect included, otherwise the button and the summary show the cart without shipping).
+  const wantSync = hydrated && selected !== null && !addressFirst && !retryAddress && deliveryReady && Boolean(syncDelivery)
+  const [sync, setSync] = useState<{ key: string; ok: boolean; requote?: boolean } | null>(null)
   const syncRef = useRef(syncDelivery)
   syncRef.current = syncDelivery
   useEffect(() => {
@@ -170,7 +188,7 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
     if (sync?.key === delivery && sync.ok) return
     let cancelled = false
     syncRef.current(delivery).then(
-      (ok) => !cancelled && setSync({ key: delivery, ok }),
+      (ok) => !cancelled && setSync(ok === 'requote' ? { key: delivery, ok: false, requote: true } : { key: delivery, ok }),
       () => !cancelled && setSync({ key: delivery, ok: false }),
     )
     return () => {
@@ -180,7 +198,8 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
   }, [wantSync, delivery])
   const settled = sync?.key === delivery
   const synced = !syncDelivery || (settled && sync!.ok)
-  const syncFailed = wantSync && settled && !sync!.ok
+  const requote = wantSync && settled && sync!.requote === true
+  const syncFailed = wantSync && settled && !sync!.ok && !requote
   const brickReady = cardActive && deliveryReady && synced && !syncFailed
 
   const transport = useMemo(
@@ -206,20 +225,23 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
     onEvent?.(e)
   }
 
-  const total = renderAmount ? renderAmount(amount) : formatMoney(amount, locale)
+  // While the delivery is being saved the amount is stale: the button reads without it.
+  const total = wantSync && (!settled || requote) ? null : renderAmount ? renderAmount(amount) : formatMoney(amount, locale)
   const label: ReactNode = retryAddress ? (
     m.retryAddress
   ) : addressFirst ? (
     m.continue
   ) : selected?.mode === 'plain' || !selected ? (
     <>
-      {m.pay} {total}
+      {m.pay}
+      {total ? <> {total}</> : null}
     </>
   ) : selected.mode === 'redirect' || (selected.mode === 'card' && (fallback || syncFailed)) ? (
     m.payRedirect
   ) : (
     <>
-      {m.placeOrder} {total}
+      {m.placeOrder}
+      {total ? <> {total}</> : null}
     </>
   )
 
@@ -232,7 +254,7 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
     if (brickReady) void brick.current?.submit()
   }
 
-  const cardNotice = (k: 'syncing' | 'syncFailed' | 'pickDelivery', node: ReactNode) =>
+  const cardNotice = (k: 'syncing' | 'syncFailed' | 'pickDelivery' | 'requote', node: ReactNode) =>
     k === 'syncFailed' ? (
       <p role="alert" className={cx.alert} data-sf-pay-notice="sync-failed" {...tid('syncFailed')}>
         {node}
@@ -255,7 +277,9 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
       {choices.choices.map((choice) => {
         const { label: rowLabel, hint } = rowText(choice, m, methodLabel)
         const checked = choice.value === choiceValue
-        const icon = icons?.[choice.option ?? 'plain']
+        const slot = choice.option ?? 'plain'
+        const icon = icons?.[slot] ?? (brandMarks ? defaultIcon(choice) : null)
+        const marks = brandMarks ? rowMarks(choice, cardBrands) : []
         return (
           <div key={choice.value} className={cx.choice} data-sf-pay-choice>
             <label className={cx.radioLabel}>
@@ -280,9 +304,16 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
                 {rowLabel}
                 {hint ? <span className={cx.hint}> {hint}</span> : null}
               </span>
+              {marks.length ? (
+                <span className={cx.brands} data-sf-pay-brands={choice.option ?? 'plain'} aria-hidden="true">
+                  {marks.map((mk) => (
+                    <BrandMark key={mk.key} brand={mk.key} logoUrl={mk.logoUrl ?? null} size={20} />
+                  ))}
+                </span>
+              ) : null}
             </label>
             {/* Always in the HTML and visible only with its radio checked (payments.css :has): without JavaScript the cash point is also chosen. */}
-            <ChoicePanel choice={choice} m={m} invalid={invalid} cx={cx} tid={tid} hidden={hydrated && !checked} />
+            <ChoicePanel choice={choice} m={m} invalid={invalid} cx={cx} tid={tid} hidden={hydrated && !checked} marks={brandMarks} />
           </div>
         )
       })}
@@ -304,7 +335,9 @@ export function PaymentMethodSection(props: PaymentMethodSectionProps) {
               ? cardNotice('pickDelivery', m.pickDeliveryFirst)
               : syncFailed
                 ? cardNotice('syncFailed', m.syncFailed)
-                : !synced
+                : requote
+                  ? cardNotice('requote', m.quoteChanged)
+                  : !synced
                   ? cardNotice('syncing', m.updatingTotal)
                   : null}
           {brickReady || fallback ? (
@@ -364,6 +397,7 @@ function ChoicePanel({
   cx,
   tid,
   hidden,
+  marks = true,
 }: {
   choice: PayChoice
   m: PaymentMethodMessages
@@ -371,6 +405,7 @@ function ChoicePanel({
   cx: PaymentMethodClassNames
   tid: (k: keyof PaymentMethodTestIds) => { 'data-testid'?: string }
   hidden: boolean
+  marks?: boolean
 }) {
   if (choice.mode === 'redirect') {
     return (
@@ -385,6 +420,7 @@ function ChoicePanel({
   const row = (p: PayChoice['points'][number], i: number, first: boolean) => (
     <label key={p.id} className={cx.cashPoint} data-sf-pay-point>
       <input type="radio" name={CASH_POINT_FIELD} value={p.id} defaultChecked={first && i === 0} className={cx.cashPointInput} aria-invalid={invalid?.has('cash_point') || undefined} />
+      {marks ? <BrandMark brand={p.payment_point || p.id} logoUrl={p.logo_url ?? null} size={22} /> : null}
       <span>{p.label}</span>
     </label>
   )
@@ -405,4 +441,38 @@ function ChoicePanel({
       <p className={cx.note}>{m.cashNote}</p>
     </div>
   )
+}
+
+const glyph = (d: string) => (
+  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" focusable="false" data-sf-pay-glyph>
+    <path d={d} />
+  </svg>
+)
+const CARD_GLYPH = 'M3 6.5h18v11H3zM3 10h18M6.5 14.5h4'
+const CASH_GLYPH = 'M3 7h18v10H3zM12 14.5a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5zM6 10v4M18 10v4'
+
+/** Leading icon of a row: the provider's mark on its own account / no-card rows; a neutral glyph for card and cash. */
+function defaultIcon(choice: PayChoice): ReactNode {
+  // By option, not mode: a card row without the in-page form still is a card.
+  if (choice.option === 'card') return glyph(CARD_GLYPH)
+  if (choice.option === 'cash') return glyph(CASH_GLYPH)
+  return findBrand(choice.methodKey) ? <BrandMark brand={choice.methodKey} size={24} /> : null
+}
+
+/** Trailing marks of a row: card networks on the card row, the first cash points on the cash row. */
+function rowMarks(choice: PayChoice, cardBrands: readonly string[]): Array<{ key: string; logoUrl?: string | null }> {
+  if (choice.option === 'card') return cardBrands.map((key) => ({ key }))
+  if (choice.option === 'cash') {
+    const seen = new Set<string>()
+    const out: Array<{ key: string; logoUrl?: string | null }> = []
+    for (const p of choice.points) {
+      const key = p.payment_point || p.id
+      if (p.group !== 'main' || seen.has(key)) continue
+      seen.add(key)
+      out.push({ key, logoUrl: p.logo_url ?? null })
+      if (out.length === 4) break
+    }
+    return out
+  }
+  return []
 }
