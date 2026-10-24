@@ -1,5 +1,19 @@
 # @asteby/storefront-react
 
+## 0.16.0
+
+### Minor Changes
+
+- e73d62f: storefront-react/cart: agregado optimista en el cajón del carrito. `cartOptimistic` (`add`/`confirm`/`rollback`/`discard`), `useOptimisticAdd(fetcher)` para React Router, `useOptimisticCart`, `useOptimisticCartCount`, `describeAddFailure` y `optimisticLabels` en `CartDrawer`: la fila aparece al instante («Agregando…»), el cajón se abre sin robar el foco y, si falla, se revierte con el aviso «No pudimos agregar X: motivo». Precios y totales siguen siendo solo de OPS.
+- a12788c: storefront-react: subruta `@asteby/storefront-react/fiscal` (+ `/fiscal/server`, `fiscal.css`): `FiscalIdentityFields`, `IdentityDocumentReader`, `InvoiceToggle`, `InvoiceStatusCard`, `loadFiscalContext` y `createInvoiceAction` (incluida la lectura del documento sin JS). storefront: el mock acepta `invoice_use` en `fiscal`.
+- d56f4f5: storefront-react/checkout: `AddressFields` acepta `lockProvinceOnFill` — una vez que `lookupPostalCode` llena el campo de estado (sin pisar nunca lo que ya escribió el comprador), lo bloquea: un `<input>` queda de solo lectura y un `<select>` (con `provinces`) queda deshabilitado con un campo oculto que sigue enviando su valor. El comprador corrige el estado corrigiendo el código postal. Por omisión `false`: el campo llenado sigue editable como antes. Marca el elemento con `data-sf-locked="1"` para que la tienda lo estilice si quiere.
+
+### Patch Changes
+
+- Updated dependencies [9ae4581]
+- Updated dependencies [a12788c]
+  - @asteby/storefront@0.11.1
+
 ## 0.15.0
 
 ### Minor Changes
