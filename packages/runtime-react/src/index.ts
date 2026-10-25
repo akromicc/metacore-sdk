@@ -469,6 +469,15 @@ export * from './use-org-document-templates'
 export * from './document-template-editor'
 export * from './metadata-cache'
 export {
+    cacheScope,
+    peekCacheScope,
+    syncCacheScope,
+    onCacheScopeChange,
+    setCacheScopeLanguageProvider,
+    setCacheScopeProvider,
+    type CacheScopeParts,
+} from './cache-scope'
+export {
     RealtimeProvider,
     useRealtimeClient,
     useRealtimeDefault,
@@ -683,6 +692,7 @@ export {
     rememberInRows,
     invalidateQueryBatchData,
     resetQueryBatchCache,
+    clearQueryBatchCaches,
     splitInToken,
     tokenForGet,
     type InListToken,
