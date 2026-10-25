@@ -42,3 +42,44 @@ See [ADR 0001](../../docs/adr/0001-genui-ui-declarativa-universal.md)
 - `genui/v1` stays valid (`Upgrade` v1 → v2); capabilities are negotiated via
   `q:caps`. The JSON Schema in the kernel is the single source; Go and TS types
   are generated and both validators run a shared conformance suite.
+
+## `genui/v2` contract (validator only; no renderers yet)
+
+This is the first code PR of the genui/v2 plan (ADR 0001, section 3, row 4):
+the contract and the validator. Nothing is drawn for v2 yet: `GenerativeUI`
+still renders `genui/v1`.
+
+```ts
+import { parseGenUI, parseUISpecV2, upgradeV1, downgrade } from '@asteby/metacore-genui'
+
+parseGenUI(untrusted)                 // v1 or v2 in, normalized v2 out ({ source: 'genui/v1' | 'genui/v2' })
+parseUISpecV2(untrusted, { allowExternalLinks: false })   // strict v2 only
+downgrade(spec, { versions: ['genui/v1'] })               // what a v1-only client can show
+```
+
+- **Source of truth**: `schema/genui-v2.schema.json` (JSON Schema 2020-12).
+  `pnpm --filter @asteby/metacore-genui codegen` regenerates
+  `src/generated/genui-v2.ts` (types) and `src/generated/genui-v2-schema.ts`
+  (embedded schema + allowed/required fields per block). CI fails on a diff.
+  The schema lives in this SDK; the Go kernel copies it (and the vectors) until
+  the kernel PR lands (`conformance/README.md`). The validator interprets a
+  small, whitelisted subset of JSON Schema and fails closed
+  (`scripts/schema-keywords.mjs`, enforced by codegen and by a test).
+- **Hand-written rules** (what the schema cannot say), each with a vector, are
+  listed in `conformance/README.md`: global limits (`GENUI_V2_LIMITS`: 200
+  blocks, block depth 6, 32 actions, 200 bindings, 128 KB UTF-8), unique ids,
+  `$ref` only in value positions, safe links (external `http(s)` only with
+  `allowExternalLinks`), declared sources, existing overlays and forms,
+  `rows`/`source` exclusion, route requirements. Rules apply by schema
+  position, never by key name. Prototype keys (`__proto__`, `constructor`,
+  `prototype`) are rejected anywhere; JSON nesting is capped at 64.
+- **Units**: text limits count Unicode code points (an emoji is 1); the
+  document size counts UTF-8 bytes.
+- **Stable error codes**: `GENUI_ERROR_CODES` (`genui.unknown_block`,
+  `genui.field_not_allowed`, `genui.limit.depth`...). They are part of the contract.
+- **Compatibility**: `upgradeV1` is structural identity (plus dropping the empty
+  fields v1 tolerated). `downgrade` replaces unsupported blocks by their
+  `fallback` text, drops actions with unsupported verbs, and returns a valid
+  `genui/v1` document when the client only speaks v1. Without caps, v1 is assumed.
+- **Conformance vectors**: `conformance/{valid,invalid,upgrade,downgrade}/*.json`,
+  shared with the Go kernel; see `conformance/README.md`.
