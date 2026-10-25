@@ -525,6 +525,63 @@ export const pay = createEmbeddedPayHandlers({
 - `cashPointsVisible={4}` deja a la vista los primeros puntos de efectivo y manda el resto a «Ver más puntos de pago» (se abre solo si el punto recordado está ahí).
 - Botón: «Generar ficha de pago $X» con efectivo (`placeOrderCash`) y «Elige la entrega para continuar» mientras falta la entrega (`chooseDelivery`; al pulsarlo señala el campo que falta en vez de pagar).
 
+### Cobro resiliente: reintento, verificación, formulario estable y aviso con salida
+
+Un cobro con tarjeta puede quedar **indeterminado** (la respuesta se perdió, el proxy devolvió HTML, OPS tardó). La regla que nunca cambia: **un resultado indeterminado jamás se cobra con otra clave de idempotencia**; se repite con la MISMA clave o se consulta el estado. Lo de abajo se adopta de forma opcional, pero **no es solo aditivo** (ver «Cambios que se notan» al final de esta sección), y está pensado para que ninguna tienda tenga que copiar código de otra.
+
+**1. Servidor (`/payments/server`).** `createEmbeddedPayHandlers` ya responde SIEMPRE JSON `{ error: { code, message, retryable, kind } }` (clasificado con `classifyPaymentError` de `@asteby/storefront`) y devuelve `500` en lugar de `502-504` (Traefik/CDN los cambian por HTML y se pierde el `Set-Cookie` de la sesión de pago). `/estado` sin cookie `sf_pay` responde `200 { payment: { status: 'none' }, recoverable }` en vez de `404`: `none` no es un resultado, así que un cobro indeterminado sigue con la misma clave; `recoverable` dice si la tienda aún tiene el carrito del comprador. Para rutas propias: `jsonPayRoute(run, 'pay', { locale, messages })`. Los textos de los errores salen del catálogo `error.<kind>` y se reemplazan con `errorMessages` (o `messages`/`locale` de `jsonPayRoute`).
+
+**2. Navegador.**
+
+```tsx
+import { PaymentMethodSection, PaymentRecovery, alternativeChoices, createResilientTransport, pickChoice, usePaymentRecovery } from '@asteby/storefront-react/payments'
+
+const recovery = usePaymentRecovery({ scope: cart.id, onRevalidate: revalidate })
+const transport = useMemo(
+  () => createResilientTransport({ payUrl: '/pagar/cobrar', statusUrl: '/pagar/estado', fields: () => formFields(formRef.current), onIssue: recovery.onIssue }),
+  [],
+)
+
+<PaymentRecovery
+  notice={recovery.notice} alternatives={alternativeChoices(choices.choices)}
+  onRetry={recovery.retry} onRefresh={() => location.assign('/pagar')}
+  onPick={(c) => { recovery.clear(); pickChoice(formRef.current, c.value) }} />
+<PaymentMethodSection key={recovery.sectionKey} transport={transport} brickProps={{ autoRetries: 0 }} onEvent={recovery.onEvent} ... />
+```
+
+- `createResilientTransport({ payUrl, statusUrl, fields, onIssue, retries = 2, backoffMs = [800, 2000], statusPolls = 3, statusPollMs = 2000, headers, locale, messages, fetch, sleep })`: reintenta los fallos transitorios con la misma clave, consulta `/estado` y, si sigue sin resolverse, lanza `PaymentHttpError(503, 'network', …, { retryable: true, kind: 'transient' })` (el hook conserva el intento y deja «Reintentar»). Con `retryable: false` de OPS hace UNA petición. Un cuerpo que no es JSON se trata como transitorio. `PaymentHttpError` expone `retryable` y `kind`. Con `autoRetries: 0` en `brickProps` el hook no duplica la política del transporte.
+- `usePaymentRecovery({ scope, storage, formAutoRetries = 2, onRevalidate })` devuelve `notice`, `sectionKey` (úsalo como `key` de la sección), `onIssue`, `onEvent`, `retry()` y `clear()`. `retry()` quita la clave del intento y monta una sección nueva SOLO tras un fallo definitivo; mientras el resultado es desconocido (confirmando, verificando, transitorio) no hace nada y devuelve `false`. Un formulario de tarjeta que no carga se vuelve a montar solo `formAutoRetries` veces antes de mostrar el aviso.
+- `<PaymentRecovery notice alternatives onRetry onPick onRefresh locale messages alternativeLabel classNames testIds>`: nunca deja un panel vacío; un fallo del comercio (credenciales, configuración) no culpa al comprador y pone primero las alternativas, que salen de las `choices` publicadas (nada de marcas en los textos). Textos en español de México por omisión (`en*` disponible), todos reemplazables con `messages` (`notice.<tipo>.title|body`, `action.retry|retry_form|refresh|alternative` con `{label}`, `error.<tipo>`; ver `paymentRecoveryMessages`), clases con `classNames` (`root title body actions primary secondary`).
+- **Consulta de estado tras «verificando»**: `useEmbeddedPayment` sigue leyendo `transport.refresh` con espera creciente (2 s, 4 s, 8 s… hasta 15 s) durante `verifyTimeoutMs` (120 s). Solo un resultado resuelto (pagado, rechazado, ficha, reto, redirección) lo termina; `pending` y `none` no. Expone `verifying` y la clave del intento no cambia. Opciones: `verifyTimeoutMs`, `verifyIntervalMs`.
+- `checkoutShouldRevalidate({ paths: ['/pagar'] })`: `shouldRevalidate` para las rutas de ALREDEDOR (root, encabezado…): el `fetcher.submit` de la entrega a `/pagar` ya no vuelve a ejecutar todos los loaders. No lo uses en la ruta de checkout (su loader debe releer el total).
+
+**3. Formulario de tarjeta estable.** El contenedor se monta UNA vez por vida del formulario:
+
+- Un cambio de total NO remonta: el hook llama `MountedPaymentForm.update({ amount })` (en Mercado Pago, `controller.update` del Card Payment Brick). Si el proveedor no lo tiene o falla, se remonta UNA vez, en cola. Varios cambios seguidos se fusionan en el último.
+- Nunca se actualiza ni remonta mientras `onSubmit` va en vuelo: se aplica después de la respuesta, y un `submit` espera a que termine la actualización en curso.
+- Escribir el correo ya no remonta (se usa al crear el formulario).
+- `PaymentMethodSection`: mientras `syncDelivery` no termina, el formulario se queda montado con la capa «Actualizando el total…» (`data-sf-pay-updating`, `payments.css`) y el botón bloqueado (`aria-disabled`).
+- Cola de montajes (`mountQueued` / `withMountQueue`, la usa el hook con cualquier adaptador): uno a la vez por contenedor, `await unmount` antes del siguiente `create`, nodo interno con id único, cancelación (`signal` en `PaymentFormMountOptions`) del montaje viejo y de uno cuyo contenedor salió del DOM, y tiempo límite de `create` (`createTimeoutMs`, por omisión `sdkTimeoutMs`) para que la cadena no se cuelgue (cae a la alternativa de redirección).
+- Adaptadores propios: implementa `update?` si el proveedor sabe cambiar el monto; si no, el hook remonta.
+
+**4. `AddressFields` (checkout).** Un solo escritor en cola; no escribe en un campo con foco ni en uno que el comprador editó (evento `input` con `isTrusted`); la colonia solo se rellena si el código postal tiene UNA sola; los eventos `input` que dispara el autollenado llevan `event.sfSynthetic === true` (`isAddressFillEvent(event)`) para que la tienda los ignore.
+
+**Migrar una tienda que copió esto** (p. ej. `store-protekauto`): borra su `pay-errors`, `pay-transport`, `pay-route.server`, `brick-adapter` y `pay-recovery`; usa `createResilientTransport`, `usePaymentRecovery`, `<PaymentRecovery>` y los handlers del servidor; quita el `key` de `PaymentBrick` si lo tenía y el adaptador envuelto. Los textos propios van en `messages`.
+
+### Cambios que se notan
+
+Al subir el pin de `@asteby/storefront` / `@asteby/storefront-react` (en 0.x un caret no adopta un minor solo):
+
+- Los handlers de pago responden **500** donde antes respondían 502-504 (y `payErrorResponse({})` pasa de 503 a 500). La señal de «indeterminado» viaja en el cuerpo (`retryable`, `kind`); un 5xx sin cuerpo legible se trata como indeterminado (misma clave), nunca como rechazo.
+- Los mensajes salen del catálogo es-MX/en y no del texto de OPS para los tipos transitorio, en curso, límite de intentos, configuración, rechazo del proveedor, pedido ya registrado y tienda cerrada. Los textos propios de la tienda (`messages.tooManyRequests`, `fillFields`, etc.) se conservan.
+- `/estado` sin sesión o con un checkout inexistente responde **200** `{ status: 'none', recoverable }` en lugar de 404. `'none'` se suma a `PaymentAttemptStatus`.
+- Escribir el correo ya no remonta el formulario de tarjeta: un invitado que lo escribe después del montaje ve el campo de correo dentro del Brick.
+- Un cambio de total actualiza el formulario en su sitio (no lo remonta) y el formulario queda dentro de un `div` interno: un contenedor propio de `useEmbeddedPayment` no debe tener hijos renderizados por React (`replaceChildren`).
+- Con resultado indeterminado, PAGAR reintenta con los mismos datos y la misma clave (no vuelve a tokenizar), y un cambio de total espera a que se resuelva.
+- `createTimeoutMs` toma por omisión `sdkTimeoutMs`.
+- `AddressFields` rellena la colonia cuando el código postal tiene una sola, rellena un campo enfocado solo si está vacío y no lo editó el comprador, y marca sus eventos (`isAddressFillEvent`).
+- Tipos: `PayErrorBody` exige `retryable` y `kind`; `paymentErrorView` trata un 5xx (salvo `retryable:false`) como `network`.
+
 ## Entrega y marcas (`@asteby/storefront-react/checkout`)
 
 Las tarifas de envío y las sucursales de «Entrega» como radios nativos, iguales en todas las tiendas: marca y nombre comercial de la paquetería (`fedex` → FedEx), servicio sin repetir la paquetería, llegada en días hábiles («Llega en 4 días hábiles»), insignias discretas de «Más económico» / «Más rápido» (solo si una tarifa lo es estrictamente) y el precio tal cual lo manda OPS. La vigencia de la cotización es UNA sola nota para toda la lista, en la zona horaria del comprador («Precios de envío vigentes hasta las 9:39 p.m.»), que aparece tras hidratar en una línea reservada (sin salto de diseño). `loading` pinta filas esqueleto al recotizar.
@@ -690,7 +747,7 @@ La cookie, el formulario y el redirect son de la tienda; `safeRedirect` valida e
 | `defineSection`, `SectionRegistry`, `createSectionRegistry`, `Sections`, `resolveSectionProps`, `sectionJsonSchema` | Content sections |
 | `themeToCss`, `themeToCssVariables`, `ThemeStyle`, `themeFontsHref`, `tokenName` | SSR theme |
 | `ProductImage`, `ProductMockup`, `MockupProvider`, `createMockupRegistry`, `registerMockup`, `BUILTIN_MOCKUPS`, `MockupFrame`, `MockupText`, `TireMockup`, `PartMockup`, `SupplementMockup`, `GenericMockup` | Mockups de respaldo (subpath `/mockups`) |
-| `PaymentMethodSection`, `buildPayChoices`, `createEmbeddedPayHandlers` (`/payments/server`), `PaymentBrick`, `useEmbeddedPayment`, `VoucherCard`, `PaymentChallenge`, `createFetchTransport`, `mercadoPagoBricksAdapter`, `loadPaymentSdk`, `paymentCsp`, `readPaymentTheme` | Pago integrado (subpath `/payments`) |
+| `PaymentMethodSection`, `buildPayChoices`, `createEmbeddedPayHandlers` + `jsonPayRoute` (`/payments/server`), `createResilientTransport`, `usePaymentRecovery`, `PaymentRecovery`, `mountQueued`, `checkoutShouldRevalidate`, `PaymentBrick`, `useEmbeddedPayment`, `VoucherCard`, `PaymentChallenge`, `createFetchTransport`, `mercadoPagoBricksAdapter`, `loadPaymentSdk`, `paymentCsp`, `readPaymentTheme` | Pago integrado (subpath `/payments`) |
 | `PromoPopup`, `CartProgressBars`, `PromoProgressBar`, `CrossSellModal`, `OrderNote`, `isExcludedPath`, `frequencyAllows`, `isCrawler` | Promociones y venta cruzada (subpath `/promotions`) |
 
 ## `@asteby/storefront-react/ui`
