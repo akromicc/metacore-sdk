@@ -879,3 +879,4 @@ export {
     type ResolvedRecordAction,
     type SplitActions,
 } from './record-actions'
+export * from './capability-providers'
