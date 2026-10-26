@@ -50,6 +50,9 @@ export type PaymentMessageKey =
   | 'voucher.email'
   | 'form.label'
   | 'challenge.title'
+  | 'challenge.escape'
+  | 'challenge.escape_hint'
+  | 'challenge.left'
 
 export type PaymentMessages = Record<PaymentMessageKey, string>
 
@@ -96,6 +99,9 @@ const ES: PaymentMessages = {
   'voucher.email': 'También te la enviamos a tu correo.',
   'form.label': 'Datos de tu tarjeta',
   'challenge.title': 'Verificación de tu banco',
+  'challenge.escape': 'Cancelar y volver al pago',
+  'challenge.escape_hint': '¿Tarda demasiado? Puedes cerrar la verificación. Si ya la aprobaste en tu banco, el pago aún puede completarse: te confirmamos aquí antes de dejarte pagar de nuevo.',
+  'challenge.left': 'Cerraste la verificación. Estamos confirmando con tu banco si el pago se completó; no vuelvas a pagar todavía.',
 }
 
 const EN: PaymentMessages = {
@@ -141,6 +147,9 @@ const EN: PaymentMessages = {
   'voucher.email': 'We also emailed it to you.',
   'form.label': 'Your card details',
   'challenge.title': 'Your bank verification',
+  'challenge.escape': 'Cancel and go back to payment',
+  'challenge.escape_hint': 'Taking too long? You can close the verification. If you already approved it with your bank the payment may still go through: we confirm here before letting you pay again.',
+  'challenge.left': 'You closed the verification. We are checking with your bank whether the payment went through; do not pay again yet.',
 }
 
 const CATALOG: Record<PaymentLocale, PaymentMessages> = { es: ES, en: EN }
