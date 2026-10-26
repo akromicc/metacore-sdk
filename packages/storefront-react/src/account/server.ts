@@ -5,7 +5,8 @@
  * The browser never talks to OPS. The action signs the buyer in with the store's `sk_` client and keeps the session
  * token in the store's own cookie, which is passed in (`customerCookie`), so name, flags and signing stay the store's.
  */
-import { isStorefrontError, repairPath, type CustomerCapabilities, type CustomerSession, type StorefrontClient } from '@asteby/storefront'
+import { invoiceFileBytes, isStorefrontError, repairPath, safeInvoiceFilename, type CustomerCapabilities, type CustomerSession, type StorefrontClient } from '@asteby/storefront'
+import { voucherOf } from './voucher.js'
 import type { AuthActionData, AuthErrorCode, AuthIntent } from './types.js'
 
 export type { AuthActionData, AuthErrorCode, AuthIntent, AuthStep } from './types.js'
@@ -254,3 +255,125 @@ export function createAuthAction(options: CreateAuthActionOptions) {
 }
 
 export type AuthAction = ReturnType<typeof createAuthAction>
+
+// ---------------------------------------------------------------------------
+// Resource routes of the order screens: the invoice file and the printable voucher
+// ---------------------------------------------------------------------------
+
+/** Headers every answer of a buyer route carries, error or not: never cached, never sniffed, never rendered as a page. */
+const LOCKED_HEADERS = {
+  'Cache-Control': 'private, no-store',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Robots-Tag': 'noindex',
+} as const
+const TEXT_HEADERS = { ...LOCKED_HEADERS, 'Content-Type': 'text/plain; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; sandbox" } as const
+const textResponse = (status: number, body: string, extra: Record<string, string> = {}) => new Response(body, { status, headers: { ...TEXT_HEADERS, ...extra } })
+
+/** Largest invoice file served (a CFDI PDF is well under 1 MB): anything bigger is refused before it is decoded. */
+export const MAX_INVOICE_FILE_BYTES = 10 * 1024 * 1024
+
+/** Statuses a buyer-facing route answers with; anything unexpected is a plain 502 (never the upstream message). */
+function failureResponse(err: unknown): Response {
+  if (isStorefrontError(err)) {
+    if (err.status === 401) return textResponse(401, 'Sesion vencida')
+    if (err.status === 404) return textResponse(404, 'No encontrado')
+    if (err.status === 429) {
+      const wait = typeof err.retryAfter === 'number' && Number.isFinite(err.retryAfter) && err.retryAfter > 0 ? Math.min(3600, Math.ceil(err.retryAfter)) : null
+      return textResponse(429, 'Demasiados intentos', wait ? { 'Retry-After': String(wait) } : {})
+    }
+  }
+  return textResponse(502, 'No pudimos obtener el archivo')
+}
+
+const FILE_TYPES: Record<string, string> = { pdf: 'application/pdf', xml: 'application/xml' }
+
+export type InvoiceFileResponseOptions = {
+  /** Client WITH the buyer's session (`storefront.withCustomerToken(token)`). */
+  storefront: StorefrontClient
+  orderId: string
+  invoiceId: string
+  /** From the URL (`pdf` | `xml`); anything else is a 404. */
+  kind: string | undefined
+  signal?: AbortSignal
+  /** Largest file served, in bytes (default `MAX_INVOICE_FILE_BYTES`, 10 MB); a bigger one is a generic 502. */
+  maxBytes?: number
+}
+
+/**
+ * Serves one file of an invoice or credit note to the signed-in buyer: the route handler of the store
+ * (`account.order.$id.invoice.$doc.$kind.ts`) is `return invoiceFileResponse({ storefront, orderId, invoiceId, kind })`.
+ * The buyer's token and any PAC URL stay on the server; the browser gets bytes with `Content-Disposition: attachment`,
+ * `Cache-Control: private, no-store`, `nosniff` and a sandboxing CSP. The content type is taken from `kind`, never
+ * from what the API says, so a file cannot make the browser render HTML under your origin. 401/404/429 pass through;
+ * anything else is a generic 502 with no upstream detail.
+ */
+export async function invoiceFileResponse({ storefront, orderId, invoiceId, kind, signal, maxBytes = MAX_INVOICE_FILE_BYTES }: InvoiceFileResponseOptions): Promise<Response> {
+  if (kind !== 'pdf' && kind !== 'xml') return textResponse(404, 'No encontrado')
+  if (!orderId || !invoiceId) return textResponse(404, 'No encontrado')
+  try {
+    const file = await storefront.customer.invoiceFile(orderId, invoiceId, kind, signal ? { signal } : undefined)
+    if (!file) return textResponse(404, 'No encontrado')
+    // Checked on the encoded text (4 chars per 3 bytes, whitespace aside) so a huge answer is never decoded.
+    if (file.content_base64.length > Math.ceil(maxBytes / 3) * 4 * 1.1 + 64) return textResponse(502, 'No pudimos obtener el archivo')
+    const bytes = invoiceFileBytes(file)
+    if (bytes.byteLength > maxBytes) return textResponse(502, 'No pudimos obtener el archivo')
+    const name = safeInvoiceFilename(file.filename, kind === 'pdf' ? 'factura.pdf' : 'factura.xml')
+    const filename = name.toLowerCase().endsWith(`.${kind}`) ? name : `${name}.${kind}`
+    return new Response(bytes as BodyInit, {
+      status: 200,
+      headers: {
+        'Content-Type': FILE_TYPES[kind]!,
+        'Content-Length': String(bytes.byteLength),
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        ...LOCKED_HEADERS,
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+      },
+    })
+  } catch (err) {
+    return failureResponse(err)
+  }
+}
+
+export type PendingVoucherResponseOptions = {
+  /** Client WITH the buyer's session. */
+  storefront: StorefrontClient
+  /** Checkout id (`PendingPayment.id`). */
+  id: string
+  /** `?descargar=1`: deliver it as a file instead of showing it. */
+  download?: boolean
+  shopName?: string
+  locale?: string
+  timeZone?: string
+  signal?: AbortSignal
+}
+
+/**
+ * The printable A4 voucher of a pending payment of the signed-in buyer. Served only when `id` is in HIS list (the list
+ * is scoped by buyer in OPS): any other id is a 404. The document is self-contained, so its CSP allows nothing
+ * external, only its own print script (with a per-response nonce) and inline styles.
+ */
+export async function pendingVoucherResponse({ storefront, id, download = false, shopName, locale, timeZone, signal }: PendingVoucherResponseOptions): Promise<Response> {
+  try {
+    const page = await storefront.customer.pendingPayments({ first: 100 }, signal ? { signal } : undefined)
+    const item = page.nodes.find((p) => p.id === id)
+    const voucher = item ? voucherOf(item) : null
+    if (!item || !voucher) return textResponse(404, 'Ficha no encontrada')
+    const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))))
+    const { renderVoucherDocument } = await import('./voucher-document.js')
+    const html = renderVoucherDocument(voucher, { ...(shopName ? { shopName } : {}), ...(locale ? { locale } : {}), ...(timeZone ? { timeZone } : {}), printButton: !download, nonce })
+    const safeId = id.replace(/[^A-Za-z0-9-]/g, '').slice(0, 8) || 'ficha'
+    return new Response(html, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        ...LOCKED_HEADERS,
+        // The download carries no script, so its policy allows none.
+        'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src ${download ? "'none'" : `'nonce-${nonce}'`}; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
+        ...(download ? { 'Content-Disposition': `attachment; filename="ficha-de-pago-${safeId}.html"` } : {}),
+      },
+    })
+  } catch (err) {
+    return failureResponse(err)
+  }
+}
