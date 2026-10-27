@@ -157,7 +157,12 @@ const fail = (intent: FiscalIntent | undefined, code: FiscalErrorCode, extra: Pa
   ok: false,
   ...(intent ? { intent } : {}),
   ...extra,
-  error: { code, ...(extra.error?.field ? { field: extra.error.field } : {}), ...(extra.error?.blocked ? { blocked: extra.error.blocked } : {}) },
+  error: {
+    code,
+    ...(extra.error?.field ? { field: extra.error.field } : {}),
+    ...(extra.error?.serverField ? { serverField: extra.error.serverField } : {}),
+    ...(extra.error?.blocked ? { blocked: extra.error.blocked } : {}),
+  },
 })
 
 const LOG_EVERY_MS = 60_000
@@ -232,9 +237,16 @@ function toFailure(err: unknown, intent: FiscalIntent, prefix: string, values?: 
     case 422:
     case 400: {
       const field = formField(err.field, prefix)
+      // A rejected field the form has no control for (e.g. `country_code`, which the store's organization owns): it cannot be
+      // marked, but the page can still say WHICH value the server refused instead of "check the marked fields" / "try again".
+      const serverField = !field && err.field ? err.field.replace(/^(fiscal|invoice)\./, '') : undefined
       return fail(intent, 'validation', {
         ...carry,
-        ...(field ? { fieldErrors: { [field]: err.message || 'invalid' }, error: { code: 'validation', field } } : {}),
+        ...(field
+          ? { fieldErrors: { [field]: err.message || 'invalid' }, error: { code: 'validation', field } }
+          : serverField
+            ? { error: { code: 'validation', serverField } }
+            : {}),
       })
     }
     case 429:
