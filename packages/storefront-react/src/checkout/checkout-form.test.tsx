@@ -97,6 +97,7 @@ describe('ContactFields + AddressFields', () => {
   it('fills state and city from the postal code, never over what the buyer typed, and suggests colonias', async () => {
     const lookup = vi.fn(async () => ({ province: 'Ciudad de México', city: 'Cuauhtémoc', neighborhoods: ['Roma Norte', 'Roma Sur'] }))
     const { container } = render(<Form lookup={lookup} />)
+    fireEvent.keyDown(screen.getByLabelText('Ciudad o municipio'), { key: 'C' })
     fireEvent.input(screen.getByLabelText('Ciudad o municipio'), { target: { value: 'CDMX' } })
     fireEvent.input(screen.getByLabelText('Código postal'), { target: { value: '0670' } })
     expect(lookup).not.toHaveBeenCalled() // incomplete code
@@ -159,6 +160,7 @@ describe('ContactFields + AddressFields', () => {
     const lookup = vi.fn(async () => ({ province: 'Jalisco', city: 'Guadalajara', neighborhoods: [] }))
     render(<Form lookup={lookup} lockProvinceOnFill />)
     const province = screen.getByLabelText('Estado') as HTMLInputElement
+    fireEvent.keyDown(province, { key: 'N' })
     fireEvent.input(province, { target: { value: 'Nayarit' } })
     fireEvent.input(screen.getByLabelText('Código postal'), { target: { value: '44100' } })
     await waitFor(() => expect(lookup).toHaveBeenCalled())
@@ -311,6 +313,7 @@ describe('state locked by the postal code', () => {
   it('never clears a state the buyer chose themselves when the postal code changes', async () => {
     render(<Form lookup={jalisco} />)
     const province = screen.getByLabelText('Estado') as HTMLInputElement
+    fireEvent.keyDown(province, { key: 'N' })
     fireEvent.input(province, { target: { value: 'Nayarit' } })
     const zip = screen.getByLabelText('Código postal')
     fireEvent.input(zip, { target: { value: '44100' } })
@@ -410,6 +413,7 @@ describe('city locked by the postal code', () => {
 
   it('never locks a city the buyer typed, an ambiguous code, or when lockCityOnFill={false}', async () => {
     render(<Form lookup={lookup} />)
+    fireEvent.keyDown(cityOf(), { key: 'Z' })
     fireEvent.input(cityOf(), { target: { value: 'Zapopan' } })
     fireEvent.input(zipOf(), { target: { value: '44100' } })
     await waitFor(() => expect(provinceOf().readOnly).toBe(true))
@@ -596,6 +600,7 @@ describe('AddressFields: a single careful writer', () => {
     )
     type(container, '44100')
     ctl(container, 'province').focus()
+    fireEvent.keyDown(ctl(container, 'city'), { key: 'Z' })
     ctl(container, 'city').value = 'Zapo'
     release()
     await waitFor(() => expect(ctl(container, 'province').value).toBe('Jalisco'))
@@ -616,6 +621,7 @@ describe('AddressFields: a single careful writer', () => {
     type(container, '44100')
     const city = ctl(container, 'city')
     // The buyer types and clears the city: it is theirs now, even though it is empty again.
+    fireEvent.keyDown(city, { key: 'Backspace' })
     city.value = ''
     const trusted = new Event('input', { bubbles: true })
     Object.defineProperty(trusted, 'isTrusted', { value: true })
@@ -745,6 +751,7 @@ describe('hideResolvedFields: state and city out of the form when the postal cod
     expect(a.container.querySelector('[data-sf-resolved-place]')).toBeNull()
     cleanup()
     const b = render(<Form lookup={cdmx} hideResolvedFields />)
+    fireEvent.keyDown(screen.getByLabelText('Ciudad o municipio'), { key: 'C' })
     fireEvent.input(screen.getByLabelText('Ciudad o municipio'), { target: { value: 'CDMX' } })
     fireEvent.input(screen.getByLabelText('Código postal'), { target: { value: '11510' } })
     await act(async () => {
@@ -775,5 +782,194 @@ describe('hideResolvedFields: state and city out of the form when the postal cod
     expect(html).toContain('name="province"')
     expect(html).toContain('name="city"')
     expect(html).not.toContain('data-sf-resolved-place')
+  })
+})
+
+describe('state and city defined by the postal code vs the browser autofill', () => {
+  const nl = async () => ({ province: 'Nuevo León', city: 'Monterrey', neighborhoods: ['La Finca', 'Monterrey Centro'] })
+  const cdmx = async () => ({ province: 'Ciudad de México', city: 'Benito Juárez', neighborhoods: [] })
+  const autofill = (el: HTMLElement, value: string) => fireEvent.change(el, { target: { value } }) // no keys: what the browser does
+  const typeKeys = (el: HTMLElement, value: string) => {
+    fireEvent.keyDown(el, { key: value[0] })
+    fireEvent.input(el, { target: { value } })
+  }
+  const zip = () => screen.getByLabelText('Código postal')
+  const locked = (el: HTMLInputElement) => {
+    expect(el.readOnly).toBe(true)
+    expect(el.getAttribute('aria-readonly')).toBe('true')
+    expect(el.getAttribute('data-sf-locked')).toBe('1')
+    expect(el.getAttribute('autocomplete')).toBe('off')
+  }
+
+  it('locks state and city when the browser had already autofilled the SAME values', async () => {
+    render(<Form lookup={nl} />)
+    const province = screen.getByLabelText('Estado') as HTMLInputElement
+    const city = screen.getByLabelText('Ciudad o municipio') as HTMLInputElement
+    autofill(province, 'Nuevo León')
+    autofill(city, 'monterrey')
+    fireEvent.input(zip(), { target: { value: '64000' } })
+    await waitFor(() => expect(province.readOnly).toBe(true))
+    locked(province)
+    locked(city)
+    expect(province.value).toBe('Nuevo León')
+    expect(city.value).toBe('Monterrey')
+  })
+
+  it('replaces and locks a DIFFERENT value the browser autofilled', async () => {
+    render(<Form lookup={nl} />)
+    const province = screen.getByLabelText('Estado') as HTMLInputElement
+    const city = screen.getByLabelText('Ciudad o municipio') as HTMLInputElement
+    autofill(province, 'Jalisco')
+    autofill(city, 'Guadalajara')
+    fireEvent.input(zip(), { target: { value: '64000' } })
+    await waitFor(() => expect(province.value).toBe('Nuevo León'))
+    locked(province)
+    expect(city.value).toBe('Monterrey')
+    locked(city)
+  })
+
+  it('also when the autofilled field is a trusted event and the one that has the focus', async () => {
+    render(<Form lookup={nl} />)
+    const province = screen.getByLabelText('Estado') as HTMLInputElement
+    province.focus()
+    province.value = 'Jalisco'
+    const trusted = new Event('input', { bubbles: true })
+    Object.defineProperty(trusted, 'isTrusted', { value: true })
+    province.dispatchEvent(trusted)
+    fireEvent.input(zip(), { target: { value: '64000' } })
+    await waitFor(() => expect(province.value).toBe('Nuevo León'))
+    locked(province)
+  })
+
+  it('keeps editable, with a note, a different value the buyer TYPED with real keys (state and city)', async () => {
+    const { container } = render(<Form lookup={nl} />)
+    const province = screen.getByLabelText('Estado') as HTMLInputElement
+    const city = screen.getByLabelText('Ciudad o municipio') as HTMLInputElement
+    typeKeys(province, 'Jalisco')
+    typeKeys(city, 'Zapopan')
+    fireEvent.input(zip(), { target: { value: '64000' } })
+    await waitFor(() => expect(container.textContent).toContain('corresponde a Nuevo León'))
+    expect(container.textContent).toContain('corresponde a Monterrey')
+    expect(province.value).toBe('Jalisco')
+    expect(province.readOnly).toBe(false)
+    expect(city.value).toBe('Zapopan')
+    expect(city.readOnly).toBe(false)
+    expect(province.getAttribute('autocomplete')).toBe('off')
+  })
+
+  it('locks a typed value that is the same as the code\'s, however it is written', async () => {
+    render(<Form lookup={cdmx} provinces={undefined} />)
+    const province = screen.getByLabelText('Estado') as HTMLInputElement
+    typeKeys(province, 'CDMX')
+    fireEvent.input(zip(), { target: { value: '03940' } })
+    await waitFor(() => expect(province.readOnly).toBe(true))
+    expect(province.value).toBe('Ciudad de México')
+  })
+
+  it('"Cambiar código postal" frees state and city together and a new code re-resolves', async () => {
+    const { container } = render(<Form lookup={nl} />)
+    const province = screen.getByLabelText('Estado') as HTMLInputElement
+    const city = screen.getByLabelText('Ciudad o municipio') as HTMLInputElement
+    autofill(province, 'Jalisco')
+    fireEvent.input(zip(), { target: { value: '64000' } })
+    await waitFor(() => expect(city.readOnly).toBe(true))
+    fireEvent.click(container.querySelector('[data-sf-change-zip]')!)
+    expect(province.readOnly).toBe(false)
+    expect(city.readOnly).toBe(false)
+    expect(province.getAttribute('autocomplete')).toBe('address-level1')
+    expect(city.getAttribute('autocomplete')).toBe('address-level2')
+    expect(province.dataset.sfLocked).toBeUndefined()
+  })
+})
+
+describe('changing the postal code over an address that is already filled', () => {
+  const catalog: Record<string, PostalCodeInfo | null> = {
+    '64000': { province: 'Nuevo León', city: 'Monterrey', neighborhoods: ['La Finca', 'Monterrey Centro'] },
+    '97000': { province: 'Yucatán', city: 'Mérida', neighborhoods: ['Centro', 'García Ginerés', 'Itzimná'] },
+    '97100': { province: 'Yucatán', city: 'Mérida', neighborhoods: ['La Finca', 'Centro'] },
+    '99999': null,
+  }
+  const lookup = async (zip: string) => catalog[zip] ?? null
+  const el = (c: HTMLElement, name: string) => c.querySelector(`[name="${name}"]`) as HTMLInputElement
+  const setZip = (v: string) => fireEvent.input(screen.getByLabelText('Código postal'), { target: { value: v } })
+  const filled = async (c: HTMLElement) => {
+    // The saved address, put there by the browser's autofill (no keys), with the colonia of 64000.
+    fireEvent.change(el(c, 'province'), { target: { value: 'Nuevo León' } })
+    fireEvent.change(el(c, 'city'), { target: { value: 'Monterrey' } })
+    fireEvent.change(el(c, 'neighborhood'), { target: { value: 'La Finca' } })
+    setZip('64000')
+    await waitFor(() => expect(el(c, 'province').readOnly).toBe(true))
+  }
+
+  it('re-resolves over an autofilled address: state and city of the new code, locked; the colonia not in its list goes', async () => {
+    const { container } = render(<Form lookup={lookup} />)
+    await filled(container)
+    expect(el(container, 'neighborhood').value).toBe('La Finca')
+    setZip('9700')
+    expect(el(container, 'province').readOnly).toBe(false)
+    expect(el(container, 'province').value).toBe('')
+    setZip('97000')
+    await waitFor(() => expect(el(container, 'province').value).toBe('Yucatán'))
+    expect(el(container, 'city').value).toBe('Mérida')
+    for (const n of ['province', 'city']) {
+      expect(el(container, n).readOnly).toBe(true)
+      expect(el(container, n).dataset.sfLocked).toBe('1')
+    }
+    expect(el(container, 'neighborhood').value).toBe('')
+    expect([...container.querySelectorAll('datalist option')].map((o) => o.getAttribute('value'))).toEqual(['Centro', 'García Ginerés', 'Itzimná'])
+  })
+
+  it('keeps the colonia when the new code lists it', async () => {
+    const { container } = render(<Form lookup={lookup} />)
+    await filled(container)
+    setZip('97100')
+    await waitFor(() => expect(el(container, 'province').value).toBe('Yucatán'))
+    expect(el(container, 'neighborhood').value).toBe('La Finca')
+  })
+
+  it('a code that resolves nothing frees and clears state, city and colonia and says so', async () => {
+    const { container } = render(<Form lookup={lookup} />)
+    await filled(container)
+    setZip('99999')
+    await waitFor(() => expect(container.querySelector('[data-sf-zip-not-found]')).not.toBeNull())
+    for (const n of ['province', 'city', 'neighborhood']) expect(el(container, n).value).toBe('')
+    expect(el(container, 'province').readOnly).toBe(false)
+    expect(el(container, 'city').readOnly).toBe(false)
+    expect(el(container, 'province').getAttribute('aria-busy')).toBeNull()
+  })
+
+  it('fast changes A -> B -> C keep the answer of C even when B answers late; dependents are busy meanwhile', async () => {
+    let releaseB!: () => void
+    const gateB = new Promise<void>((r) => (releaseB = r))
+    const slow = async (zip: string) => {
+      if (zip === '97000') await gateB
+      return catalog[zip] ?? null
+    }
+    const { container } = render(<Form lookup={slow} />)
+    await filled(container)
+    setZip('97000') // B (slow)
+    expect(el(container, 'province').getAttribute('aria-busy')).toBe('true')
+    setZip('9710')
+    setZip('97100') // C
+    await waitFor(() => expect(el(container, 'province').value).toBe('Yucatán'))
+    expect(el(container, 'neighborhood').value).toBe('La Finca')
+    releaseB()
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+    })
+    expect([...container.querySelectorAll('datalist option')].map((o) => o.getAttribute('value'))).toEqual(['La Finca', 'Centro'])
+    expect(el(container, 'province').getAttribute('aria-busy')).toBeNull()
+  })
+
+  it('"Cambiar código postal" then a new code re-resolves the same way', async () => {
+    const { container } = render(<Form lookup={lookup} />)
+    await filled(container)
+    fireEvent.click(container.querySelector('[data-sf-change-zip]')!)
+    expect(el(container, 'province').readOnly).toBe(false)
+    expect(el(container, 'province').value).toBe('')
+    setZip('97000')
+    await waitFor(() => expect(el(container, 'city').value).toBe('Mérida'))
+    expect(el(container, 'city').readOnly).toBe(true)
+    expect(el(container, 'neighborhood').value).toBe('')
   })
 })
