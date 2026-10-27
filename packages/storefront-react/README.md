@@ -985,6 +985,15 @@ export default function Checkout() {
 
 CSP: el lector necesita `worker-src 'self'` (o el origen que sirva el worker). Sin `workerSrc` el navegador no puede leer el PDF y el comprador pasa a captura manual.
 
+### Cómo funciona y qué sale del navegador (nada)
+
+«Escanear mi constancia» es una AYUDA de captura que corre entera en el navegador; el servidor sigue siendo la autoridad.
+
+1. **En el navegador, y de ahí no sale nada.** El PDF, una foto del QR o los cuadros de la cámara se leen en el dispositivo: pdf.js (y `jsqr` como respaldo del `BarcodeDetector` nativo) se cargan con `import()` solo cuando el comprador elige un archivo, el worker lo sirve TU sitio (sin CDN), `isEvalSupported: false` y sin JavaScript del PDF. El archivo, su texto, el CURP y la calle se descartan al terminar (`discard_fields` de la región: ni se muestran ni se guardan) y no hay ninguna petición de red con ellos. Lo único que continúa es lo que el comprador ve y confirma en la tarjeta «Revisa tus datos»: RFC, razón social, CP, régimen y uso, más una evidencia mínima (tipo de documento, id del documento, fecha de emisión, huella SHA-256, de dónde vino) y solo si él marca «Guardar» para la próxima vez.
+2. **Nunca envía solo.** Confirmar la tarjeta solo rellena el formulario (o `InvoiceToggle`); enviar es una acción aparte del comprador. Sin JavaScript el formulario manual sigue siendo la vía y `serverUpload` es opt-in (lee el archivo en memoria y lo descarta).
+3. **El servidor no confía en lo extraído.** Lo extraído llega como cualquier dato tecleado (`request-invoice` / `save-profile` / `set-invoice`). OPS, `storefront_customers` y `fiscal_mexico` lo revalidan contra los datos de la región: estructura del RFC y dígito verificador, razón social (sin régimen societario), CP, régimen contra `region_fiscal_catalogs`, compatibilidad régimen-uso y tipo de persona. La evidencia (`document`) es informativa: no compra confianza ni salta ninguna validación.
+4. **Qué NO hace.** No consulta al SAT ni a un proveedor (el QR solo aporta el RFC y el idCIF que ya trae); no valida que el nombre coincida con el registro del SAT. Eso lo decide el PAC al timbrar; si lo rechaza, el flujo de corregir y reintentar (`invoiceCorrection`) marca el campo.
+
 ## Correo de la cuenta (`<EmailSettings>`, contrato 1.15)
 
 ```tsx
