@@ -30,6 +30,10 @@ export type AddressFieldsMessages = Record<AddressFieldKey | ContactFieldKey, st
   provinceLocked: string
   /** Tooltip and note of a city/municipality the postal code defined (locked). */
   cityLocked: string
+  /** Note under a state the buyer typed that differs from the postal code's (`{value}` = the postal code's state). */
+  provinceMismatch: string
+  /** Same for the city/municipality. */
+  cityMismatch: string
   /** Discreet action that releases the locked state so the buyer can fix the postal code. */
   changePostalCode: string
   /** Visually hidden prefix of the one-line place summary (what a screen reader hears before "Miguel Hidalgo, Ciudad de México"). */
@@ -58,6 +62,8 @@ const ES: AddressFieldsMessages = {
   postalCodeNotFound: 'No encontramos ese código postal; revísalo o escribe tu estado y ciudad.',
   provinceLocked: 'Definido por tu código postal',
   cityLocked: 'Definido por tu código postal',
+  provinceMismatch: 'Tu código postal corresponde a {value}. Revisa el estado o el código postal.',
+  cityMismatch: 'Tu código postal corresponde a {value}. Revisa la ciudad o el código postal.',
   changePostalCode: 'Cambiar código postal',
   resolvedPlace: 'Entrega en',
   suggestionsLabel: 'Sugerencias de dirección',
@@ -88,6 +94,8 @@ const EN: AddressFieldsMessages = {
   postalCodeNotFound: "We couldn't find that postal code; check it or type your state and city.",
   provinceLocked: 'Set by your postal code',
   cityLocked: 'Set by your postal code',
+  provinceMismatch: 'Your postal code belongs to {value}. Check the state or the postal code.',
+  cityMismatch: 'Your postal code belongs to {value}. Check the city or the postal code.',
   changePostalCode: 'Change postal code',
   resolvedPlace: 'Delivering to',
   suggestionsLabel: 'Address suggestions',
@@ -252,11 +260,39 @@ export type AddressFieldsProps = Common & {
  * references. Autofill tokens: `postal-code`, `address-level1/2/3`, `address-line1/2`. The postal code uses the
  * numeric keyboard when the country format is numeric.
  */
+/** While the postal code defines a field the browser must not offer its own address suggestions for it. */
+function suppressAutofill(el: HTMLInputElement | HTMLSelectElement) {
+  if (el.dataset.sfAc === undefined) el.dataset.sfAc = el.getAttribute('autocomplete') ?? ''
+  el.setAttribute('autocomplete', 'off')
+}
+function restoreAutofill(el: HTMLInputElement | HTMLSelectElement) {
+  if (el.dataset.sfAc === undefined) return
+  if (el.dataset.sfAc) el.setAttribute('autocomplete', el.dataset.sfAc)
+  else el.removeAttribute('autocomplete')
+  delete el.dataset.sfAc
+}
+
+/** Same state, however it is written: no accents, case, "Estado de ...", the CDMX and Estado de México aliases, or the catalog's name/code. */
+function canonPlace(v: string, kind: 'province' | 'city', provinces?: readonly { name: string; code?: string | null }[] | null): string {
+  let s = fold(v).replace(/[.,]/g, '').replace(/\s+/g, ' ')
+  if (kind === 'province' && provinces?.length) {
+    const hit = provinces.find((p) => fold(p.name).replace(/[.,]/g, '') === s || (!!p.code && fold(p.code) === s))
+    if (hit) s = fold(hit.name).replace(/[.,]/g, '').replace(/\s+/g, ' ')
+  }
+  if (/^(cdmx|d f|df|distrito federal|ciudad de mexico|mexico city)$/.test(s)) return 'ciudad de mexico'
+  if (kind === 'province') {
+    if (/^(mexico|edomex|edo mex|edo de mexico|estado de mexico|state of mexico)$/.test(s)) return 'estado de mexico'
+    return s.replace(/^estado de /, '')
+  }
+  return s.replace(/^(municipio|alcaldia|ciudad) de /, '')
+}
+
 /** Locks a field the lookup just filled: read-only for an `<input>`, disabled + a hidden mirror for a `<select>`. */
 function lockField(el: HTMLInputElement | HTMLSelectElement) {
   if (el.dataset.sfLocked === '1') return
   el.dataset.sfLocked = '1'
   el.setAttribute('aria-readonly', 'true')
+  suppressAutofill(el)
   if (el instanceof HTMLSelectElement) {
     // A disabled `<select>` would stop submitting its value: a hidden sibling keeps it in the form.
     const name = el.getAttribute('name')
@@ -282,6 +318,7 @@ function unlockField(el: HTMLInputElement | HTMLSelectElement) {
   delete el.dataset.sfLocked
   el.removeAttribute('aria-readonly')
   el.removeAttribute('title')
+  restoreAutofill(el)
   if (el instanceof HTMLSelectElement) {
     const mirror = el.nextElementSibling
     if (mirror instanceof HTMLInputElement && mirror.dataset.sfLockMirror === '1') mirror.remove()
@@ -325,7 +362,11 @@ export function AddressFields(props: AddressFieldsProps) {
   const [notFound, setNotFound] = useState(false)
   const [provinceLocked, setProvinceLocked] = useState(false)
   const [cityLocked, setCityLocked] = useState(false)
+  // What the buyer typed differs from the postal code's state/city: the value (the code's) to tell them about.
+  const [mismatch, setMismatch] = useState<{ province?: string; city?: string }>({})
   const [coloniaSelect, setColoniaSelect] = useState(false)
+  // A lookup is in flight: the fields that depend on the code are dimmed and busy so they do not look valid.
+  const [pending, setPending] = useState(false)
   // State and city the postal code defined, shown as one line (not as inputs) while it holds.
   const [resolved, setResolved] = useState<{ province: string; provinceCode: string | null; city: string; place: string } | null>(null)
   const resolvedRef = useRef(false)
@@ -362,23 +403,58 @@ export function AddressFields(props: AddressFieldsProps) {
     writer.current = writer.current.then(task).catch(() => {})
   }
 
-  // A field the buyer edited is theirs: only REAL input (`isTrusted`) marks it, not the events this component dispatches.
+  // A field the buyer edited is theirs. "Edited" means they TYPED: a real input/change (`isTrusted`) that follows their own
+  // keys, paste, drop or (on a list) pointer/keys. The browser's address autofill also fires trusted input/change events but
+  // with no keys on the field: that is not the buyer's text, so the postal code's state and city can still replace it.
   useEffect(() => {
     const form = zipRef.current?.closest('form')
     if (!form) return
+    const field = (e: Event) => {
+      const el = e.target as HTMLElement | null
+      return el instanceof HTMLInputElement || el instanceof HTMLSelectElement ? el : null
+    }
+    const touch = (e: Event) => {
+      const el = field(e)
+      if (el) el.dataset.sfTyped = '1'
+    }
+    const key = (e: Event) => {
+      const k = (e as KeyboardEvent).key
+      if (k && (k.length === 1 || k === 'Backspace' || k === 'Delete' || k === 'Unidentified' || k === 'Process' || k === 'Enter' || k === ' ')) touch(e)
+    }
+    const beforeInput = (e: Event) => {
+      const t = (e as InputEvent).inputType
+      if (t && t !== 'insertReplacementText') touch(e)
+    }
+    const pointer = (e: Event) => {
+      if (field(e) instanceof HTMLSelectElement) touch(e)
+    }
     const mark = (e: Event) => {
       if (!e.isTrusted) return
-      const el = e.target as HTMLElement | null
-      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) {
+      const el = field(e)
+      if (!el) return
+      if (el.dataset.sfTyped === '1') {
         el.dataset.sfUserEdited = '1'
         delete el.dataset.sfAutofilled
+        delete el.dataset.sfBrowserFilled
+      } else if (el.dataset.sfLocked !== '1') {
+        // Browser autofill: not theirs, not ours either (the lookup may replace it).
+        el.dataset.sfBrowserFilled = '1'
       }
     }
-    form.addEventListener('input', mark, true)
-    form.addEventListener('change', mark, true)
+    const events: Array<[string, (e: Event) => void]> = [
+      ['keydown', key],
+      ['paste', touch],
+      ['drop', touch],
+      ['cut', touch],
+      ['compositionstart', touch],
+      ['beforeinput', beforeInput],
+      ['pointerdown', pointer],
+      ['input', mark],
+      ['change', mark],
+    ]
+    for (const [name, fn] of events) form.addEventListener(name, fn, true)
     return () => {
-      form.removeEventListener('input', mark, true)
-      form.removeEventListener('change', mark, true)
+      for (const [name, fn] of events) form.removeEventListener(name, fn, true)
     }
   }, [])
 
@@ -387,19 +463,23 @@ export function AddressFields(props: AddressFieldsProps) {
     const form = zipRef.current?.closest('form')
     if (!form) return
     const touched: Array<HTMLInputElement | HTMLSelectElement> = []
-    if (resolvedRef.current) setDefaultsStale(true)
     for (const locked of form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-sf-locked="1"]')) {
       unlockField(locked)
       touched.push(locked)
     }
-    for (const key of ['province', 'city', 'neighborhood'] as const) {
+    for (const key of ['province', 'city'] as const) {
       const el = form.elements.namedItem(n(key)) as HTMLInputElement | HTMLSelectElement | null
       if (el && !('length' in el && !(el instanceof HTMLSelectElement)) && !touched.includes(el)) touched.push(el)
     }
+    setDefaultsStale(true)
     for (const el of touched) {
-      if (el.dataset.sfAutofilled !== '1') continue
+      restoreAutofill(el)
+      // State and city belonged to the old postal code (looked up, autofilled by the browser or saved defaults): they go with it.
+      // Only what the buyer TYPED stays.
+      if (el.dataset.sfUserEdited === '1' || el.dataset.sfTyped === '1' || !el.value) continue
       el.value = ''
       delete el.dataset.sfAutofilled
+      delete el.dataset.sfBrowserFilled
       const event = new Event('input', { bubbles: true })
       Object.defineProperty(event, ADDRESS_FILL_EVENT_FLAG, { value: true })
       el.dispatchEvent(event)
@@ -409,6 +489,8 @@ export function AddressFields(props: AddressFieldsProps) {
     setResolved(null)
     setProvinceLocked(false)
     setCityLocked(false)
+    setMismatch({})
+    setPending(false)
     setFilled(false)
   }
 
@@ -427,14 +509,30 @@ export function AddressFields(props: AddressFieldsProps) {
     }
     const city = info.city.trim()
     if (!province || !city) return null
-    const theirs = (name: string, value: string) => {
+    const theirs = (name: string, value: string, kind: 'province' | 'city') => {
       const el = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null
       if (!el || ('length' in el && !(el instanceof HTMLSelectElement))) return false
-      // Something typed that the code does not say: the buyer's, not ours to replace.
-      return !!el.value && el.dataset.sfAutofilled !== '1' && !sameText(el.value, value)
+      // Something the buyer TYPED that the code does not say: theirs, not ours to replace (browser autofill is not).
+      return !!el.value && (el.dataset.sfUserEdited === '1' || el.dataset.sfTyped === '1') && canonPlace(el.value, kind, provinces) !== canonPlace(value, kind, provinces)
     }
-    if (theirs(n('province'), province) || theirs(n('city'), city)) return null
+    if (theirs(n('province'), province, 'province') || theirs(n('city'), city, 'city')) return null
     return { province, provinceCode, city, place: info.municipality?.trim() || city }
+  }
+
+  // The code resolves nothing (or the lookup failed): what belonged to the previous code is cleared, never left beside a different one.
+  const notResolved = () => {
+    const form = zipRef.current?.closest('form')
+    const hood = form?.elements.namedItem(n('neighborhood')) as HTMLInputElement | HTMLSelectElement | null
+    if (hood && !('length' in hood && !(hood instanceof HTMLSelectElement)) && hood.value && hood.dataset.sfUserEdited !== '1' && hood.dataset.sfTyped !== '1') {
+      hood.value = ''
+      const ev = new Event('input', { bubbles: true })
+      Object.defineProperty(ev, ADDRESS_FILL_EVENT_FLAG, { value: true })
+      hood.dispatchEvent(ev)
+    }
+    setColonias([])
+    coloniaSelectRef.current = false
+    setColoniaSelect(false)
+    setNotFound(true)
   }
 
   const runLookup = (zip: string) => {
@@ -443,13 +541,15 @@ export function AddressFields(props: AddressFieldsProps) {
     if (postalCode?.pattern && !new RegExp(`^(?:${postalCode.pattern})$`).test(zip)) return
     lastZip.current = zip
     lookupPending.current = zip
+    setPending(true)
     setNotFound(false)
     const form = zipRef.current?.closest('form')
     void lookup(zip).then(
       (info) => {
         if (lookupPending.current === zip) lookupPending.current = null
+        if (lastZip.current === zip) setPending(false)
         if (!info) {
-          if (lastZip.current === zip) setNotFound(true)
+          if (lastZip.current === zip) notResolved()
           return
         }
         enqueue(() => {
@@ -459,14 +559,37 @@ export function AddressFields(props: AddressFieldsProps) {
             if (!el || !value || ('length' in el && !(el instanceof HTMLSelectElement))) return false
             // Already locked from a previous lookup: leave it (the buyer corrects the postal code instead).
             if (el.dataset.sfLocked === '1') return false
-            // Never over what they edited, nor over text in the field they are typing in. A focused field that is still
-            // empty (Tab from the postal code lands on the next one) is filled: nothing of theirs is overwritten.
-            if (el.dataset.sfUserEdited === '1' || (el.ownerDocument.activeElement === el && el.value)) return false
-            // Only an empty field, or one this lookup filled before: never what the buyer typed.
-            if (el.value && el.dataset.sfAutofilled !== '1') return false
+            const hasValue = !!el.value
+            const theirs = el.dataset.sfUserEdited === '1' || el.dataset.sfTyped === '1'
+            if (lock) {
+              // The postal code defines state and city. What the browser autofilled (same or different) never wins over it;
+              // what the buyer TYPED stays only when it differs from the code's, with a note (the server validates the pair).
+              if (theirs) {
+                if (hasValue && canonPlace(el.value, lock, lock === 'province' ? provinces : undefined) !== canonPlace(value, lock, lock === 'province' ? provinces : undefined)) {
+                  setMismatch((prev) => ({ ...prev, [lock]: value }))
+                  suppressAutofill(el)
+                  return false
+                }
+                if (!hasValue) return false
+              }
+            } else {
+              // Never over what they edited, nor over text in the field they are typing in. A focused field that is still
+              // empty (Tab from the postal code lands on the next one) is filled: nothing of theirs is overwritten.
+              if (theirs || (el.ownerDocument.activeElement === el && el.value)) return false
+              // Only an empty field, or one this lookup filled before: never what the buyer typed.
+              if (el.value && el.dataset.sfAutofilled !== '1') return false
+            }
             if (el instanceof HTMLSelectElement && ![...el.options].some((o) => o.value === value)) return false
             el.value = value
             el.dataset.sfAutofilled = '1'
+            delete el.dataset.sfBrowserFilled
+            if (lock) {
+              // From here on the value is the catalog's, not the buyer's: a new postal code replaces it.
+              delete el.dataset.sfUserEdited
+              delete el.dataset.sfTyped
+              setMismatch((prev) => (prev[lock] ? { ...prev, [lock]: undefined } : prev))
+              suppressAutofill(el)
+            }
             const event = new Event('input', { bubbles: true })
             Object.defineProperty(event, ADDRESS_FILL_EVENT_FLAG, { value: true })
             el.dispatchEvent(event)
@@ -486,6 +609,13 @@ export function AddressFields(props: AddressFieldsProps) {
           }
           const a = resolution ? false : fill(n('province'), info.province, lockProvinceOnFill ? 'province' : undefined)
           const b = resolution ? false : fill(n('city'), info.city, lockCityOnFill && (info.cities?.length ?? 0) <= 1 ? 'city' : undefined)
+          // A colonia of the previous code that the new code does not list is cleared; one it lists stays.
+          const hoodNow = showNeighborhood ? (form?.elements.namedItem(n('neighborhood')) as HTMLInputElement | HTMLSelectElement | null) : null
+          if (hoodNow && !('length' in hoodNow && !(hoodNow instanceof HTMLSelectElement)) && hoodNow.value && hoodNow.dataset.sfUserEdited !== '1' && hoodNow.dataset.sfTyped !== '1' && (info.neighborhoods?.length ?? 0) > 0 && !info.neighborhoods!.some((c) => sameText(c, hoodNow.value))) {
+            hoodNow.value = ''
+            delete hoodNow.dataset.sfAutofilled
+            delete hoodNow.dataset.sfBrowserFilled
+          }
           // Colonia only when the code has exactly ONE: with several the buyer chooses (the list is offered, not applied).
           const only = info.neighborhoods?.length === 1 ? info.neighborhoods[0] : null
           const c = showNeighborhood ? fill(n('neighborhood'), only) : false
@@ -511,7 +641,10 @@ export function AddressFields(props: AddressFieldsProps) {
       () => {
         /* lookup failed: the buyer types state and city */
         if (lookupPending.current === zip) lookupPending.current = null
-        if (lastZip.current === zip) setNotFound(true)
+        if (lastZip.current === zip) {
+          setPending(false)
+          notResolved()
+        }
       },
     )
   }
@@ -614,8 +747,8 @@ export function AddressFields(props: AddressFieldsProps) {
       </button>
     </span>
   )
-  const provinceHint = provinceLocked ? lockHint(m.provinceLocked) : undefined
-  const cityHint = cityLocked ? lockHint(m.cityLocked) : undefined
+  const provinceHint = provinceLocked ? lockHint(m.provinceLocked) : mismatch.province ? m.provinceMismatch.replace('{value}', mismatch.province) : undefined
+  const cityHint = cityLocked ? lockHint(m.cityLocked) : mismatch.city ? m.cityMismatch.replace('{value}', mismatch.city) : undefined
   const numericZip = postalCode?.inputMode === 'numeric'
   // A server error on state/city must be seen next to a field the buyer can fix: inputs come back (with what was resolved).
   const showResolved = !!resolved && !errors[n('province')] && !errors[n('city')]
@@ -640,8 +773,11 @@ export function AddressFields(props: AddressFieldsProps) {
           onInput={(e) => {
             const v = e.currentTarget.value.trim()
             // Editing the code that defined the state frees it (and what the lookup filled) before anything else.
-            if (v !== lastZip.current && hasLock(zipRef.current)) releaseLookup()
-            if (v !== lastZip.current) setNotFound(false)
+            if (v !== lastZip.current && (lastZip.current !== null || hasLock(zipRef.current))) releaseLookup()
+            if (v !== lastZip.current) {
+              setNotFound(false)
+              setMismatch({})
+            }
             if (postalCode?.maxLength && v.length === postalCode.maxLength) runLookup(v)
           }}
           onBlur={(e) => runLookup(e.currentTarget.value.trim())}
@@ -682,7 +818,7 @@ export function AddressFields(props: AddressFieldsProps) {
         </>
       ) : null}
       {showResolved ? null : provinces && provinces.length ? (
-        <CheckoutField {...common} as="select" name={n('province')} label={m.province} autoComplete="address-level1" defaultValue={startOf('province')} error={errors[n('province')] ?? null} classNames={field(cx, 'half')} hint={provinceHint}>
+        <CheckoutField {...common} as="select" name={n('province')} label={m.province} autoComplete="address-level1" {...(pending ? { 'aria-busy': true, 'data-sf-busy': '', style: { opacity: 0.55 } } : {})} defaultValue={startOf('province')} error={errors[n('province')] ?? null} classNames={field(cx, 'half')} hint={provinceHint}>
           <option value="" disabled>
             {m.provincePlaceholder}
           </option>
@@ -693,9 +829,9 @@ export function AddressFields(props: AddressFieldsProps) {
           ))}
         </CheckoutField>
       ) : (
-        <CheckoutField {...common} name={n('province')} label={m.province} autoComplete="address-level1" defaultValue={startOf('province')} error={errors[n('province')] ?? null} classNames={field(cx, 'half')} hint={provinceHint} />
+        <CheckoutField {...common} name={n('province')} label={m.province} autoComplete="address-level1" {...(pending ? { 'aria-busy': true, 'data-sf-busy': '', style: { opacity: 0.55 } } : {})} defaultValue={startOf('province')} error={errors[n('province')] ?? null} classNames={field(cx, 'half')} hint={provinceHint} />
       )}
-      {showResolved ? null : <CheckoutField {...common} name={n('city')} label={m.city} autoComplete="address-level2" defaultValue={startOf('city')} error={errors[n('city')] ?? null} classNames={field(cx, 'half')} hint={cityHint} />}
+      {showResolved ? null : <CheckoutField {...common} name={n('city')} label={m.city} autoComplete="address-level2" {...(pending ? { 'aria-busy': true, 'data-sf-busy': '', style: { opacity: 0.55 } } : {})} defaultValue={startOf('city')} error={errors[n('city')] ?? null} classNames={field(cx, 'half')} hint={cityHint} />}
       {showNeighborhood && coloniaSelect ? (
         <CheckoutField
           {...common}
@@ -704,7 +840,7 @@ export function AddressFields(props: AddressFieldsProps) {
           label={m.neighborhood}
           autoComplete="address-level3"
           optional={showNeighborhood !== 'required'}
-          defaultValue={colonias.includes(defaults?.neighborhood ?? '') ? (defaults?.neighborhood ?? '') : ''}
+          defaultValue={!defaultsStale && colonias.includes(defaults?.neighborhood ?? '') ? (defaults?.neighborhood ?? '') : ''}
           error={errors[n('neighborhood')] ?? null}
           classNames={field(cx, 'half')}
         >
@@ -724,7 +860,7 @@ export function AddressFields(props: AddressFieldsProps) {
           label={m.neighborhood}
           autoComplete="address-level3"
           optional={showNeighborhood !== 'required'}
-          defaultValue={defaults?.neighborhood ?? ''}
+          defaultValue={defaultsStale ? '' : (defaults?.neighborhood ?? '')}
           error={errors[n('neighborhood')] ?? null}
           classNames={field(cx, 'half')}
           {...(colonias.length && !coloniaSelect ? { list: listId } : {})}
