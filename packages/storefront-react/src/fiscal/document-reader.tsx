@@ -84,6 +84,9 @@ const isPdf = (f: File, accept: string[]) => {
 
 const isImage = (f: File) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name)
 
+/** Time to read a PDF in the buyer's browser, worker download and start included. */
+const BROWSER_READ_TIMEOUT_MS = 20_000
+
 const mib = (bytes: number) => `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`
 
 export function IdentityDocumentReader(props: IdentityDocumentReaderProps) {
@@ -248,13 +251,16 @@ export function IdentityDocumentReader(props: IdentityDocumentReaderProps) {
         const eng = await import('@asteby/storefront/fiscal-document')
         const { text, sha256 } = await eng.readPdfText(file, {
           maxBytes: spec.max_bytes,
+          // In the browser the clock also covers loading and starting the pdf.js worker: a phone on a slow network needs
+          // more than the 3 s the server upload allows itself.
+          timeoutMs: BROWSER_READ_TIMEOUT_MS,
           ...(spec.max_pages ? { maxPages: spec.max_pages } : {}),
           ...(workerSrc ? { workerSrc } : {}),
           signal: ctl.signal,
         })
         if (ctl.signal.aborted) return
         // The QR is a best-effort cross-check; it never blocks.
-        const qr = await eng.decodePdfQr(file, { ...(workerSrc ? { workerSrc } : {}), signal: ctl.signal }).catch(() => null)
+        const qr = await eng.decodePdfQr(file, { ...(workerSrc ? { workerSrc } : {}), timeoutMs: BROWSER_READ_TIMEOUT_MS, signal: ctl.signal }).catch(() => null)
         if (ctl.signal.aborted) return
         const x = eng.extractIdentityDocument(text, spec, {
           catalogs: region.fiscal_id ? eng.catalogsFromRegion(region.fiscal_id) : {},
