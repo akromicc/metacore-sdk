@@ -112,6 +112,25 @@ export type {
 export { groupInvoiceDocs, invoiceFileBytes, safeInvoiceFilename } from './invoice-docs.js'
 export type { InvoiceGroup } from './invoice-docs.js'
 
+export {
+  coversYear,
+  DEFAULT_FIT_TAG_PREFIX,
+  fitTag,
+  fitTagsAny,
+  isMasked,
+  MAX_SUBJECT_YEAR,
+  MIN_SUBJECT_YEAR,
+  PRIVATE_MASK,
+  reconcileSubjectValues,
+  resolveSubject,
+  splitSubjectTree,
+  SUBJECT_CATALOG_PAGE_BYTES,
+  subjectFields,
+  subjectLevels,
+  subjectOptions,
+} from './subjects.js'
+export type { ResolvedSubject, SubjectOption, SubjectProblemCode, SubjectProblems, SubjectValues } from './subjects.js'
+
 export type { GeoPoint, OpeningHours, OpenStatus } from './geo.js'
 export type * from './types.js'
 
