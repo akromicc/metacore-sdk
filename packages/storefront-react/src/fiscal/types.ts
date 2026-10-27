@@ -66,7 +66,13 @@ export type FiscalActionData = {
   values?: Partial<FiscalFieldValues>
   /** Fields the server rejected, by form name (`invoice.tax_regime`) -> machine message. */
   fieldErrors?: Record<string, string>
-  error?: { code: FiscalErrorCode; field?: string; blocked?: string }
+  error?: {
+    code: FiscalErrorCode
+    field?: string
+    /** `validation` on a field the form has no control for (`country_code`): the server's name, without `fiscal.`/`invoice.`. Never in `fieldErrors`. */
+    serverField?: string
+    blocked?: string
+  }
   invoice?: InvoiceSummary
   result?: InvoiceResult
 }

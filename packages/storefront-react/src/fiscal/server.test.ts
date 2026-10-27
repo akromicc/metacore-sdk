@@ -182,6 +182,36 @@ describe('createInvoiceAction request-invoice', () => {
   })
 })
 
+describe('request-invoice: a rejected field the form has no control for', () => {
+  // The body the store's account form posts, and the answer production gave: 400 on `invoice.country_code`.
+  const BODY = { intent: 'request-invoice', order_id: 'ord_1', 'invoice.tax_id': RFC_MORAL, 'invoice.legal_name': 'EMPRESA DE PRUEBA SA DE CV', 'invoice.postal_code': '44100', 'invoice.tax_regime': '601', 'invoice.use': 'G03' }
+  const reject = async (field: string) => {
+    const { sf, post, signIn } = setup()
+    const { Cookie } = await signIn()
+    const { StorefrontError } = await import('@asteby/storefront')
+    const spy = vi.spyOn(sf.customer, 'requestInvoice').mockRejectedValue(new StorefrontError({ status: 400, code: 'validation', message: 'country_code: is required', field }))
+    return { res: await post(BODY, { Cookie }), spy }
+  }
+
+  it('sends the form body as is: no country the form does not have', async () => {
+    const { spy } = await reject('invoice.country_code')
+    expect(spy.mock.calls[0]![1]).toEqual({ tax_id: RFC_MORAL, legal_name: 'EMPRESA DE PRUEBA SA DE CV', postal_code: '44100', tax_regime: '601', invoice_use: 'G03' })
+  })
+
+  it('reports the server field instead of a marked one that does not exist', async () => {
+    const { res } = await reject('invoice.country_code')
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors).toBeUndefined()
+    expect(res.error).toEqual({ code: 'validation', serverField: 'country_code' })
+  })
+
+  it('a field with a control is still marked, without serverField', async () => {
+    const { res } = await reject('invoice.tax_regime')
+    expect(res.fieldErrors).toEqual({ 'invoice.tax_regime': 'country_code: is required' })
+    expect(res.error).toEqual({ code: 'validation', field: 'invoice.tax_regime' })
+  })
+})
+
 describe('request-invoice body and field marking', () => {
   it('sends no `requested` flag and names the use `invoice_use`', () => {
     const body = orderInvoiceBody({ requested: true, tax_id: 'URE180429TM6', legal_name: 'X', tax_regime: '601', use: 'G03', postal_code: '86991', document: { kind: 'k', source: 'manual' } as never, save: true })
