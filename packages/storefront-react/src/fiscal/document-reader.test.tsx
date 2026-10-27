@@ -65,6 +65,16 @@ describe('<IdentityDocumentReader /> idle', () => {
     await waitFor(() => expect(input().hasAttribute('name')).toBe(false))
   })
 
+  it('gives the browser read more time than the 3 s of the server upload (worker download and start count)', async () => {
+    returns(CSF_FISICA_LINES)
+    const { upload } = setup()
+    upload(pdf())
+    await waitFor(() => expect(read).toHaveBeenCalled())
+    expect(read.mock.calls[0]![1]!.timeoutMs).toBeGreaterThanOrEqual(15_000)
+    await waitFor(() => expect(qr).toHaveBeenCalled())
+    expect(qr.mock.calls[0]![1]!.timeoutMs).toBeGreaterThanOrEqual(15_000)
+  })
+
   it('reads a dropped file', async () => {
     returns(CSF_FISICA_LINES)
     const { container } = setup()
