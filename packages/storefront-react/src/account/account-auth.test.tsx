@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { renderToString } from 'react-dom/server'
 import axe from 'axe-core'
 import type { CustomerCapabilities } from '@asteby/storefront'
@@ -121,5 +121,91 @@ describe('<AccountAuth />', () => {
     expect((await axe.run(container, AXE)).violations).toEqual([])
     fireEvent.click(container.querySelector('[data-sf-account-link=register]')!)
     expect((await axe.run(container, AXE)).violations).toEqual([])
+  })
+
+  describe('code step of a registration', () => {
+    const registered = () => {
+      const view = render(<AccountAuth capabilities={full} initialView="register" />)
+      const { container } = view
+      fireEvent.change(container.querySelector('[name=first_name]')!, { target: { value: 'Ana' } })
+      fireEvent.change(container.querySelector('[name=email]')!, { target: { value: 'ana@b.co' } })
+      fireEvent.change(container.querySelector('[name=password]')!, { target: { value: 'una-clave-larga' } })
+      fireEvent.submit(container.querySelector('form')!)
+      view.rerender(<AccountAuth capabilities={full} initialView="register" data={{ ok: true, step: 'verify', email: 'ana@b.co' }} />)
+      return view
+    }
+
+    it('offers a resend with a cooldown that repeats the registration, without leaking the password into the code form', () => {
+      vi.useFakeTimers()
+      try {
+        const { container } = registered()
+        expect(screen.getByRole('heading', { name: 'Confirma tu correo' })).toBeTruthy()
+        const code = container.querySelector('[data-sf-account-form]') as HTMLFormElement
+        expect(code.querySelector('[name=password]')).toBeNull()
+        const resendForm = container.querySelector('[data-sf-account-resend-form]') as HTMLFormElement
+        expect((resendForm.querySelector('[name=password]') as HTMLInputElement).value).toBe('una-clave-larga')
+        expect((resendForm.querySelector('[name=email]') as HTMLInputElement).value).toBe('ana@b.co')
+        expect((resendForm.querySelector('[name=first_name]') as HTMLInputElement).value).toBe('Ana')
+        const btn = resendForm.querySelector('button') as HTMLButtonElement
+        expect([btn.name, btn.value]).toEqual(['intent', 'resend'])
+        // Cooling down: disabled and counting.
+        expect(btn.disabled).toBe(true)
+        expect(btn.textContent).toBe('Reenviar código (60 s)')
+        act(() => void vi.advanceTimersByTime(30_000))
+        expect(btn.textContent).toBe('Reenviar código (30 s)')
+        act(() => void vi.advanceTimersByTime(30_000))
+        expect(btn.disabled).toBe(false)
+        expect(btn.textContent).toBe('Reenviar código')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('says a new code was sent after a resend, restarts the cooldown and follows a server wait', () => {
+      vi.useFakeTimers()
+      try {
+        const { container, rerender } = registered()
+        act(() => void vi.advanceTimersByTime(61_000))
+        rerender(<AccountAuth capabilities={full} initialView="register" data={{ ok: true, step: 'verify', email: 'ana@b.co', resent: true }} />)
+        expect(container.querySelector('[data-sf-account-notice]')!.textContent).toContain('código nuevo')
+        const btn = container.querySelector('[data-sf-account-resend-form] button') as HTMLButtonElement
+        expect(btn.disabled).toBe(true)
+        act(() => void vi.advanceTimersByTime(61_000))
+        rerender(<AccountAuth capabilities={full} initialView="register" data={{ ok: false, step: 'verify', email: 'ana@b.co', error: { code: 'rate_limited', retryAfter: 17 } }} />)
+        expect(btn.textContent).toBe('Reenviar código (17 s)')
+        expect(screen.getByRole('alert').textContent).toContain('Demasiados intentos')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('without the held password (page reloaded) there is no resend form, only a way back to correct the email', () => {
+      const { container } = render(<AccountAuth capabilities={full} data={{ ok: true, step: 'verify', email: 'ana@b.co' }} />)
+      expect(container.querySelector('[data-sf-account-resend-form]')).toBeNull()
+      fireEvent.click(container.querySelector('[data-sf-account-link=register]')!)
+      expect(screen.getByRole('heading', { name: 'Crear una cuenta' })).toBeTruthy()
+      expect((container.querySelector('[name=email]') as HTMLInputElement).value).toBe('ana@b.co')
+    })
+
+    it('explains a wrong or expired code on the field and has no axe violations', async () => {
+      const { container, rerender } = registered()
+      rerender(<AccountAuth capabilities={full} initialView="register" data={{ ok: false, step: 'verify', email: 'ana@b.co', error: { code: 'invalid_code', field: 'code' } }} />)
+      expect(container.querySelector('#code-error')!.textContent).toContain('ya venció')
+      expect(container.querySelector('#code-error')!.textContent).toContain('pide uno nuevo')
+      expect((await axe.run(container, AXE)).violations).toEqual([])
+    })
+
+    it('the sign-in code resend also cools down', () => {
+      vi.useFakeTimers()
+      try {
+        const { container } = render(<AccountAuth capabilities={full} data={{ ok: true, step: 'otp', email: 'a@b.co' }} />)
+        const btn = container.querySelector('[data-sf-account-link=resend]') as HTMLButtonElement
+        expect(btn.disabled).toBe(true)
+        act(() => void vi.advanceTimersByTime(60_000))
+        expect(btn.disabled).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 })

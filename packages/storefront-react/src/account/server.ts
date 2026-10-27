@@ -114,10 +114,10 @@ export type CreateAuthActionOptions = {
 
 export type AuthActionArgs = { request: Request }
 
-const fail = (code: AuthErrorCode, extra: Partial<AuthActionData> = {}, field?: string): AuthActionData => ({
+const fail = (code: AuthErrorCode, extra: Partial<AuthActionData> = {}, field?: string, retryAfter?: number): AuthActionData => ({
   ok: false,
   ...extra,
-  error: { code, ...(field ? { field } : {}) },
+  error: { code, ...(field ? { field } : {}), ...(retryAfter ? { retryAfter } : {}) },
 })
 
 /** Maps what the SDK threw to the error the form shows. `ctx` tells what a 401 means on this step. */
@@ -132,8 +132,10 @@ function toFailure(err: unknown, ctx: 'credentials' | 'code' | 'other', extra: P
       return fail(ctx === 'credentials' ? 'invalid_credentials' : ctx === 'code' ? 'invalid_code' : 'unavailable', extra, ctx === 'code' ? 'code' : undefined)
     case 409:
       return fail('email_taken', extra, 'email')
-    case 429:
-      return fail('rate_limited', extra)
+    case 429: {
+      const wait = typeof err.retryAfter === 'number' && Number.isFinite(err.retryAfter) && err.retryAfter > 0 ? Math.min(3600, Math.ceil(err.retryAfter)) : undefined
+      return fail('rate_limited', extra, undefined, wait)
+    }
     case 400:
     case 422:
       return fail('validation', extra, err.field)
@@ -152,6 +154,7 @@ function toFailure(err: unknown, ctx: 'credentials' | 'code' | 'other', extra: P
  * | ------------- | ---------------------------------------- | -------------------------------------------------------- |
  * | `login`       | email, password                          | signs in -> redirect                                     |
  * | `register`    | email, password, first_name?, last_name? | `step: 'verify'` or, without verification, redirect      |
+ * | `resend`      | email, password, first_name?, last_name? | `step: 'verify'` + `resent` (new code; the server holds it back during its cooldown) |
  * | `verify`      | email, code                              | account ready -> redirect                                |
  * | `otp-request` | email                                    | `step: 'otp'` (code sent)                                |
  * | `otp-login`   | email, code                              | signs in -> redirect                                     |
@@ -203,14 +206,16 @@ export function createAuthAction(options: CreateAuthActionOptions) {
           if (!password) return fail('validation', carry, 'password')
           return await signedIn(await sf.customer.loginWithPassword({ email, password }, w), next)
         }
-        case 'register': {
+        case 'register':
+        case 'resend': {
           if (!passwordOn) return off()
-          if (!password) return fail('validation', carry, 'password')
+          if (!password) return fail('validation', intent === 'resend' ? { ...carry, step: 'verify' } : carry, 'password')
           const res = await sf.customer.register(
             { email, password, ...(text('first_name').trim() ? { first_name: text('first_name').trim() } : {}), ...(text('last_name').trim() ? { last_name: text('last_name').trim() } : {}) },
             w,
           )
-          return res.status === 'created' ? await signedIn(res.session, next) : { ok: true, step: 'verify', email }
+          if (res.status === 'created') return await signedIn(res.session, next)
+          return { ok: true, step: 'verify', email, ...(intent === 'resend' ? { resent: true } : {}) }
         }
         case 'verify': {
           if (!code) return fail('validation', carry, 'code')
@@ -247,7 +252,7 @@ export function createAuthAction(options: CreateAuthActionOptions) {
           return fail('validation', carry)
       }
     } catch (err) {
-      const step = intent === 'verify' ? 'verify' : intent === 'otp-login' ? 'otp' : intent === 'reset' || intent === 'forgot' ? 'reset' : undefined
+      const step = intent === 'verify' || intent === 'resend' ? 'verify' : intent === 'otp-login' ? 'otp' : intent === 'reset' || intent === 'forgot' ? 'reset' : undefined
       const ctx = intent === 'login' ? 'credentials' : step ? 'code' : 'other'
       return toFailure(err, ctx, step && intent !== 'forgot' ? { ...carry, step } : carry)
     }

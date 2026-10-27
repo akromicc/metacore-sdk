@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import axe from 'axe-core'
 import type { CustomerCapabilities } from '@asteby/storefront'
 import { PostPurchaseAccountPrompt, postPurchaseAccountPromptMessages } from './index.js'
@@ -92,5 +92,34 @@ describe('<PostPurchaseAccountPrompt />', () => {
       expect((await axe.run(r.container, AXE)).violations).toEqual([])
       r.unmount()
     }
+  })
+
+  it('after the registration it offers a resend with a cooldown that repeats it; the code form never carries the password', () => {
+    vi.useFakeTimers()
+    try {
+      const view = render(<PostPurchaseAccountPrompt email="ana@b.co" capabilities={full} />)
+      fireEvent.change(view.container.querySelector('[name=password]')!, { target: { value: 'una-clave-larga' } })
+      fireEvent.submit(view.container.querySelector('form')!)
+      view.rerender(<PostPurchaseAccountPrompt email="ana@b.co" capabilities={full} data={{ ok: true, step: 'verify', email: 'ana@b.co' }} />)
+      expect(view.container.querySelector('[data-sf-ppa-form] [name=password]')).toBeNull()
+      const rf = view.container.querySelector('[data-sf-ppa-resend-form]') as HTMLFormElement
+      expect((rf.querySelector('[name=password]') as HTMLInputElement).value).toBe('una-clave-larga')
+      const btn = rf.querySelector('button') as HTMLButtonElement
+      expect([btn.name, btn.value, btn.disabled, btn.textContent]).toEqual(['intent', 'resend', true, 'Reenviar código (60 s)'])
+      act(() => void vi.advanceTimersByTime(60_000))
+      expect(btn.disabled).toBe(false)
+      view.rerender(<PostPurchaseAccountPrompt email="ana@b.co" capabilities={full} data={{ ok: true, step: 'verify', email: 'ana@b.co', resent: true }} />)
+      expect(view.container.querySelector('[data-sf-ppa-notice]')!.textContent).toContain('código nuevo')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a wrong code is explained on the field with a hint for a late one', () => {
+    const { container } = render(
+      <PostPurchaseAccountPrompt email="a@b.co" capabilities={full} data={{ ok: false, step: 'verify', email: 'a@b.co', error: { code: 'invalid_code', field: 'code' } }} />,
+    )
+    expect(container.querySelector('#code-error')!.textContent).toContain('pide uno nuevo')
+    expect(container.querySelector('[data-sf-ppa-hint]')!.textContent).toContain('no depende de la cuenta')
   })
 })

@@ -1,7 +1,7 @@
 /** What the account form and the server action share. Plain types: no React, no server code. */
 
 /** What the buyer is doing. It is the `intent` field of the account form. */
-export type AuthIntent = 'login' | 'register' | 'verify' | 'otp-request' | 'otp-login' | 'forgot' | 'reset'
+export type AuthIntent = 'login' | 'register' | 'resend' | 'verify' | 'otp-request' | 'otp-login' | 'forgot' | 'reset'
 
 /** Screen the form shows next, set by the action (`verify`: code of the registration; `otp`: code to sign in; `reset`: code + new password). */
 export type AuthStep = 'verify' | 'otp' | 'reset'
@@ -34,5 +34,8 @@ export type AuthActionData = {
   step?: AuthStep
   /** Email the flow is about, to carry it to the next screen. */
   email?: string
-  error?: { code: AuthErrorCode; field?: string }
+  /** The step was reached by asking for a new code (`resend`), not by the first request: the form says so. */
+  resent?: boolean
+  /** `rate_limited` only: seconds the server asked to wait (`Retry-After`), when it said. */
+  error?: { code: AuthErrorCode; field?: string; retryAfter?: number }
 }
