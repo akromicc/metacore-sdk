@@ -254,13 +254,22 @@ describe('mock customer and content', () => {
     expect(session.customer).toMatchObject({ email: 'nueva@example.com', first_name: 'Nora' })
     expect((await sf.withCustomerToken(session.token).customer.get()).email).toBe('nueva@example.com')
     await expect(sf.customer.verifyRegistration({ email: 'nueva@example.com', code: '000000' })).rejects.toMatchObject({ status: 401 })
-    await expect(sf.customer.register(input)).rejects.toMatchObject({ status: 409, code: 'conflict' })
+    // An email that already has an account gets the same 202 (no enumeration); the old password keeps working until the code is verified.
+    await expect(sf.customer.register({ ...input, password: 'otra-clave-123' })).resolves.toEqual({ status: 'verification_required' })
+    await expect(sf.customer.loginWithPassword({ email: 'nueva@example.com', password: 'secret1234' })).resolves.toMatchObject({ token: expect.any(String) })
     const again = await sf.customer.loginWithPassword({ email: 'nueva@example.com', password: 'secret1234' })
     expect(again.customer.id).toBe(session.customer.id)
     await expect(sf.customer.register({ email: 'bad', password: 'secret1234' })).rejects.toMatchObject({ status: 400 })
     await expect(sf.customer.register({ email: 'otra@example.com', password: 'short' })).rejects.toMatchObject({ status: 400, field: 'password' })
     await expect(sf.customer.register({ email: 'otra@example.com', password: 'a'.repeat(9) })).rejects.toMatchObject({ status: 400, field: 'password' })
     await expect(sf.customer.register({ email: 'otra@example.com', password: 'a'.repeat(129) })).rejects.toMatchObject({ status: 400, field: 'password' })
+  })
+
+  it('without email verification an existing email is a generic 409', async () => {
+    const m = createMockStorefront({ customerCapabilities: { email_verification: false } })
+    const c = createStorefrontClient({ baseUrl: 'https://mock.local/api/gw', token: 'sk_mock', fetch: m.fetch })
+    await c.customer.register({ email: 'dup@example.com', password: 'secret1234' })
+    await expect(c.customer.register({ email: 'dup@example.com', password: 'secret1234' })).rejects.toMatchObject({ status: 409, code: 'conflict' })
   })
 
   it('creates the account straight away without email verification', async () => {

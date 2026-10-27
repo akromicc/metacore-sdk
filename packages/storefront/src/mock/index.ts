@@ -1251,12 +1251,15 @@ export function createMockStorefront(options: MockStorefrontOptions = {}) {
     const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
     const first_name = text(body.first_name)
     const last_name = text(body.last_name)
-    if (state.passwords.has(email)) throw new HttpError(409, 'conflict', 'An account with this email already exists', 'email')
     if (capabilities.email_verification) {
+      // Like OPS: with verification the answer is the same whether or not the email already has an account (no
+      // enumeration). Proving the mailbox then sets this password on the existing account.
       state.pendingRegistrations.set(email, { password, first_name, last_name })
       state.otps.set(`email:${email}`, otpCode)
       return { status: 202, body: { status: 'verification_required' }, cache: 'private' }
     }
+    // Without verification the only way to avoid handing out someone else's session is a 409 (the one residual oracle).
+    if (state.passwords.has(email)) throw new HttpError(409, 'conflict', 'An account with this email already exists', 'email')
     state.passwords.set(email, password)
     return { status: 201, body: sessionFor(email, { first_name, last_name }), cache: 'private' }
   })

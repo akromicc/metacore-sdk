@@ -7,9 +7,10 @@
  * Styling: `data-sf-account-*` attributes and `classNames` slots, fields reuse `CheckoutField` (and `checkout.css`);
  * `account.css` is an optional neutral sheet. Texts are Spanish by default, English with `locale="en"`, any with `messages`.
  */
-import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ComponentType, type FormEvent, type ReactNode } from 'react'
 import type { CustomerCapabilities } from '@asteby/storefront'
 import { CheckoutField, ErrorSummary, useFieldErrors, type CheckoutFieldClassNames } from '../checkout/fields.js'
+import { RESEND_COOLDOWN_SECONDS, useCooldown } from './cooldown.js'
 import type { AuthActionData, AuthErrorCode, AuthStep } from './types.js'
 
 export type AccountAuthView = 'login' | 'register' | 'otp-email' | 'forgot' | AuthStep
@@ -24,6 +25,14 @@ export type AccountAuthMessages = {
   lastName: string
   code: string
   codeSentTo: string
+  /** After asking for a new code. `{email}` is replaced. */
+  codeResent: string
+  /** Under the code field of a registration, when the code is late. */
+  codeLate: string
+  /** Label of the disabled resend button while the cooldown runs. `{s}` is replaced with the seconds left. */
+  resendIn: string
+  /** Back from the code step to the registration form, to correct the email. */
+  changeEmail: string
   submit: Record<AccountAuthView, string>
   resend: string
   forgotLink: string
@@ -53,6 +62,10 @@ const ES: AccountAuthMessages = {
   lastName: 'Apellido',
   code: 'Código',
   codeSentTo: 'Enviamos un código a {email}. Puede tardar un minuto.',
+  codeResent: 'Te enviamos un código nuevo a {email}. El anterior ya no sirve.',
+  codeLate: 'Si no llega, revisa tu carpeta de correo no deseado o corrige tu correo.',
+  resendIn: 'Reenviar código ({s} s)',
+  changeEmail: 'Usar otro correo',
   submit: {
     login: 'Entrar',
     register: 'Crear cuenta',
@@ -71,9 +84,9 @@ const ES: AccountAuthMessages = {
   nothingAvailable: 'Esta tienda no admite iniciar sesión por ahora.',
   errors: {
     invalid_credentials: 'El correo o la contraseña no coinciden.',
-    invalid_code: 'El código no es válido o ya venció.',
+    invalid_code: 'El código no es correcto o ya venció. Si fallaste varias veces, pide uno nuevo.',
     email_taken: 'Ya existe una cuenta con este correo. Entra o recupera tu contraseña.',
-    rate_limited: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.',
+    rate_limited: 'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
     validation: 'Revisa los datos e inténtalo de nuevo.',
     unsupported: 'Esta forma de entrar no está disponible en esta tienda.',
     store_misconfigured: 'No pudimos crear tu cuenta por un problema de configuración de la tienda. Puedes comprar como invitado; ya avisamos a la tienda.',
@@ -99,6 +112,10 @@ const EN: AccountAuthMessages = {
   lastName: 'Last name',
   code: 'Code',
   codeSentTo: 'We sent a code to {email}. It can take a minute.',
+  codeResent: 'We sent a new code to {email}. The previous one no longer works.',
+  codeLate: 'If it does not arrive, check your spam folder or correct your email.',
+  resendIn: 'Resend code ({s} s)',
+  changeEmail: 'Use another email',
   submit: {
     login: 'Sign in',
     register: 'Create account',
@@ -117,9 +134,9 @@ const EN: AccountAuthMessages = {
   nothingAvailable: 'This store does not support signing in right now.',
   errors: {
     invalid_credentials: 'The email and password do not match.',
-    invalid_code: 'The code is not valid or has expired.',
+    invalid_code: 'The code is wrong or has expired. If you missed several times, ask for a new one.',
     email_taken: 'An account with this email already exists. Sign in or reset your password.',
-    rate_limited: 'Too many attempts. Wait a few minutes and try again.',
+    rate_limited: 'Too many attempts. Wait a moment and try again.',
     validation: 'Check the details and try again.',
     unsupported: 'This way of signing in is not available in this store.',
     store_misconfigured: 'We could not create your account because of a store configuration problem. You can check out as a guest; we have already told the store.',
@@ -193,6 +210,10 @@ export function AccountAuth({ capabilities, data, next, pending = false, initial
   const otpOn = capabilities.otp_channels.includes('email')
   const [view, setView] = useState<AccountAuthView>(() => data?.step ?? initialOf(capabilities, initialView))
   const [email, setEmail] = useState(data?.email ?? '')
+  // The password typed in the registration, kept in memory only so "resend the code" can repeat the registration (the
+  // server keeps just its hash and the form never gets it back). Lost on reload: then only "use another email" is left.
+  const [held, setHeld] = useState<{ password: string; first_name: string; last_name: string } | null>(null)
+  const cooldown = useCooldown(data?.ok && (data.step === 'verify' || data.step === 'otp') ? RESEND_COOLDOWN_SECONDS : 0)
   const ref = useRef<HTMLFormElement>(null)
   const serverFields = data?.error?.field ? [data.error.field] : null
   const errorText = data?.error ? m.errors[data.error.code] : null
@@ -202,11 +223,24 @@ export function AccountAuth({ capabilities, data, next, pending = false, initial
   useEffect(() => {
     if (data?.step) setView(data.step)
     if (data?.email) setEmail(data.email)
+    // A code was just sent: the next one can be asked for in a minute. A refusal says how long to wait.
+    if (data?.ok && data.step) cooldown.start(RESEND_COOLDOWN_SECONDS)
+    else if (data?.error?.code === 'rate_limited' && data.error.retryAfter) cooldown.start(data.error.retryAfter)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `cooldown.start` is stable
   }, [data])
 
   const go = (to: AccountAuthView) => {
     v.clear()
+    if (to === 'register' || to === 'login') setHeld(null)
     setView(to)
+  }
+  // Remember the password of the registration being sent (see `held`); the resend form carries it.
+  const remember = (e: FormEvent<HTMLElement>) => {
+    const f = e.target as HTMLFormElement
+    if (view !== 'register' || typeof f?.elements === 'undefined') return
+    const fd = new FormData(f)
+    const text = (k: string) => (typeof fd.get(k) === 'string' ? (fd.get(k) as string) : '')
+    if (text('password')) setHeld({ password: text('password'), first_name: text('first_name'), last_name: text('last_name') })
   }
   const fieldProps = { classNames: cx.field, ...(locale ? { locale } : {}) }
   const emailField = (
@@ -250,20 +284,27 @@ export function AccountAuth({ capabilities, data, next, pending = false, initial
     case 'otp':
       body = (
         <>
-          <p className={cx.notice} data-sf-account-notice>
-            {m.codeSentTo.replace('{email}', email)}
+          <p className={cx.notice} role="status" data-sf-account-notice>
+            {(data?.resent && view === 'verify' ? m.codeResent : m.codeSentTo).replace('{email}', email)}
           </p>
           <input type="hidden" name="email" value={email} />
           {codeField}
+          {view === 'verify' ? (
+            <p className={cx.notice} data-sf-account-hint>
+              {m.codeLate}
+            </p>
+          ) : null}
         </>
       )
       links = (
         <>
           {view === 'otp' ? (
-            <button type="submit" name="intent" value="otp-request" formNoValidate className={cx.link} data-sf-account-link="resend">
-              {m.resend}
+            <button type="submit" name="intent" value="otp-request" formNoValidate disabled={pending || cooldown.remaining > 0} className={cx.link} data-sf-account-link="resend">
+              {cooldown.remaining > 0 ? m.resendIn.replace('{s}', String(cooldown.remaining)) : m.resend}
             </button>
-          ) : null}
+          ) : (
+            link('register', m.changeEmail)
+          )}
           {link('login', m.backToLogin)}
         </>
       )
@@ -317,7 +358,7 @@ export function AccountAuth({ capabilities, data, next, pending = false, initial
     )
   }
   return (
-    <section className={cx.root} data-sf-account-auth data-sf-account-view={view} aria-labelledby="sf-account-title">
+    <section className={cx.root} data-sf-account-auth data-sf-account-view={view} aria-labelledby="sf-account-title" onSubmitCapture={remember}>
       {header}
       <h1 id="sf-account-title" className={cx.title}>
         {title}
@@ -340,6 +381,23 @@ export function AccountAuth({ capabilities, data, next, pending = false, initial
           {links}
         </div>
       </FormTag>
+      {view === 'verify' && held ? (
+        // A second form (not nested): it repeats the registration with the password held in memory, which makes the
+        // server send a new code and drop the old one. It cannot ride the code form: that one would post the password
+        // on every confirmation.
+        <FormTag method="post" {...(action ? { action } : {})} className={cx.form} data-sf-account-resend-form>
+          <input type="hidden" name="email" value={email} />
+          <input type="hidden" name="password" value={held.password} />
+          {held.first_name ? <input type="hidden" name="first_name" value={held.first_name} /> : null}
+          {held.last_name ? <input type="hidden" name="last_name" value={held.last_name} /> : null}
+          {next ? <input type="hidden" name="next" value={next} /> : null}
+          <div className={cx.links}>
+            <button type="submit" name="intent" value="resend" disabled={pending || cooldown.remaining > 0} className={cx.link} data-sf-account-link="resend">
+              {cooldown.remaining > 0 ? m.resendIn.replace('{s}', String(cooldown.remaining)) : m.resend}
+            </button>
+          </div>
+        </FormTag>
+      ) : null}
     </section>
   )
 }

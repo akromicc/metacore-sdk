@@ -90,6 +90,42 @@ describe('createAuthAction', () => {
     expect(ok.cookie).toMatch(/^sf_customer=ct_.*Expires=set/)
   })
 
+  it('resend repeats the registration: a new code, flagged, and the first code stops working', async () => {
+    await ctx.post({ intent: 'register', email: 'r@example.com', password: 'secret1234', first_name: 'Rita' })
+    expect(await ctx.post({ intent: 'resend', email: 'r@example.com', password: 'secret1234', first_name: 'Rita' })).toEqual({ ok: true, step: 'verify', email: 'r@example.com', resent: true })
+    const ok = redirectOf(await ctx.post({ intent: 'verify', email: 'r@example.com', code: '000000' }))
+    expect(ok.cookie).toMatch(/^sf_customer=ct_/)
+  })
+
+  it('resend without a password is a validation error that stays on the code step; a refusal carries its wait', async () => {
+    expect(await ctx.post({ intent: 'resend', email: 'r@example.com' })).toMatchObject({ step: 'verify', error: { code: 'validation', field: 'password' } })
+    const { StorefrontError } = await import('@asteby/storefront')
+    vi.spyOn(ctx.sf.customer, 'register').mockRejectedValueOnce(new StorefrontError({ status: 429, code: 'rate_limited', message: 'x', retryAfter: 42 } as never))
+    expect(await ctx.post({ intent: 'resend', email: 'r@example.com', password: 'secret1234' })).toEqual({
+      ok: false,
+      step: 'verify',
+      email: 'r@example.com',
+      error: { code: 'rate_limited', retryAfter: 42 },
+    })
+  })
+
+  it('a wrong, expired or exhausted code is one invalid_code on the code field; throttling is its own error', async () => {
+    await ctx.post({ intent: 'register', email: 'w@example.com', password: 'secret1234' })
+    const { StorefrontError } = await import('@asteby/storefront')
+    const spy = vi.spyOn(ctx.sf.customer, 'verifyRegistration')
+    spy.mockRejectedValueOnce(new StorefrontError({ status: 401, code: 'unauthorized', message: 'expired' } as never))
+    expect(await ctx.post({ intent: 'verify', email: 'w@example.com', code: '123456' })).toMatchObject({ step: 'verify', error: { code: 'invalid_code', field: 'code' } })
+    spy.mockRejectedValueOnce(new StorefrontError({ status: 429, code: 'rate_limited', message: 'x' } as never))
+    expect(await ctx.post({ intent: 'verify', email: 'w@example.com', code: '123456' })).toMatchObject({ step: 'verify', error: { code: 'rate_limited' } })
+  })
+
+  it('a store without email verification never asks for a code', async () => {
+    const plain = setup({ customerCapabilities: { email_verification: false } })
+    const res = await plain.post({ intent: 'register', email: 'n@example.com', password: 'secret1234' })
+    expect(res).toBeInstanceOf(Response)
+    expect((res as Response).headers.get('Set-Cookie')).toMatch(/^sf_customer=ct_/)
+  })
+
   it('signs in with the password and ignores an unsafe next', async () => {
     await ctx.post({ intent: 'register', email: 'a@example.com', password: 'secret1234' })
     await ctx.post({ intent: 'verify', email: 'a@example.com', code: '000000' })
@@ -104,7 +140,11 @@ describe('createAuthAction', () => {
   it('reports an existing email, throttling and validation', async () => {
     await ctx.post({ intent: 'register', email: 'b@example.com', password: 'secret1234' })
     await ctx.post({ intent: 'verify', email: 'b@example.com', code: '000000' })
-    expect(await ctx.post({ intent: 'register', email: 'b@example.com', password: 'secret1234' })).toMatchObject({ error: { code: 'email_taken', field: 'email' } })
+    // With email verification an existing email is NOT told apart: same code step as a new one.
+    expect(await ctx.post({ intent: 'register', email: 'b@example.com', password: 'secret1234' })).toEqual({ ok: true, step: 'verify', email: 'b@example.com' })
+    const plain = setup({ customerCapabilities: { email_verification: false } })
+    redirectOf(await plain.post({ intent: 'register', email: 'b@example.com', password: 'secret1234' }))
+    expect(await plain.post({ intent: 'register', email: 'b@example.com', password: 'secret1234' })).toMatchObject({ error: { code: 'email_taken', field: 'email' } })
     expect(await ctx.post({ intent: 'register', email: 'c@example.com', password: 'short' })).toMatchObject({ error: { code: 'validation', field: 'password' } })
     expect(await ctx.post({ intent: 'login', email: '', password: 'x' })).toMatchObject({ error: { code: 'validation', field: 'email' } })
     for (let i = 0; i < 5; i++) await ctx.post({ intent: 'login', email: 'b@example.com', password: 'bad' })
