@@ -83,6 +83,32 @@
   color: var(--_muted);
   font-size: 0.875rem;
 }
+/* Compact confirmation card of the review step: the four facts, not the whole form. */
+[data-sf-reader-summary] {
+  display: grid;
+  gap: 0.75rem;
+}
+[data-sf-reader-facts] {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--_border);
+  border-radius: 0.75rem;
+}
+[data-sf-reader-facts] > div {
+  display: grid;
+  gap: 0.125rem;
+}
+[data-sf-reader-facts] dt {
+  font-size: 0.75rem;
+  color: var(--_muted);
+}
+[data-sf-reader-facts] dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 [data-sf-reader-zone] {
   position: relative;
   display: grid;
